@@ -1,0 +1,7 @@
+# Python dependencies for AEPGP Windows Context Menu Integration
+
+# Smart card communication library
+pyscard>=2.0.0
+
+# For building executable (development only)
+pyinstaller>=5.0.0

@@ -1,0 +1,294 @@
+================================================================================
+                        AEPGP Context Menu
+                      File Encryption Tool
+                          User Guide
+================================================================================
+
+WHAT IS AEPGP?
+--------------
+AEPGP Context Menu is a Windows tool that lets you encrypt and decrypt files
+by simply right-clicking them. It uses your AEPGP card (hardware security
+token) to keep your files secure.
+
+
+SYSTEM REQUIREMENTS
+-------------------
+✓ Windows 10 or Windows 11
+✓ AmbiSecure AEPGP card (hardware token)
+✓ USB smart card reader
+✓ GnuPG software (free download)
+
+
+BEFORE YOU START
+----------------
+1. Install GnuPG (if not already installed):
+   - Download from: https://www.gpg4win.org/
+   - Run the installer
+   - Follow the installation wizard
+
+2. Have your AEPGP card and card reader ready
+
+
+INSTALLATION
+------------
+1. Double-click "AEPGP_Installer.exe"
+
+2. The installer window will appear with two buttons:
+   - Install
+   - Uninstall
+
+3. Click the "Install" button
+
+4. When prompted by Windows:
+   - Click "Yes" to allow the program to make changes
+   (This is called "User Account Control" or UAC)
+
+5. Wait for the confirmation message:
+   "Installation completed successfully!"
+
+6. Click "Close" to exit the installer
+
+Installation is now complete!
+
+
+FIRST-TIME SETUP (IMPORTANT - DO THIS ONCE)
+--------------------------------------------
+Before you can encrypt or decrypt files, you must initialize your AEPGP card
+with encryption keys. This is a ONE-TIME setup.
+
+1. Insert your AEPGP card into the USB card reader
+
+2. Connect the card reader to your computer
+
+3. Open Command Prompt:
+   - Press Windows Key + R
+   - Type: cmd
+   - Press Enter
+
+4. Type the following command and press Enter:
+   gpg --card-edit
+
+5. You will see information about your card. Type:
+   admin
+
+6. Press Enter. Then type:
+   generate
+
+7. Press Enter and follow the prompts:
+   - Choose key size (2048 is recommended)
+   - Choose expiration (0 = no expiration is fine)
+   - Enter your name
+   - Enter your email address
+   - Enter a PIN for your card (you'll need this every time you encrypt/decrypt)
+
+8. Wait for key generation to complete (may take 1-2 minutes)
+
+9. Type: quit
+
+10. Press Enter to exit
+
+Your card is now ready to use!
+
+
+HOW TO ENCRYPT A FILE
+---------------------
+1. Make sure your AEPGP card is inserted in the card reader
+
+2. Find the file you want to encrypt in Windows Explorer
+
+3. Right-click on the file
+
+4. WINDOWS 11 USERS: Click "Show more options" first
+   WINDOWS 10 USERS: Skip this step
+
+5. Click "Encrypt with AEPGP"
+
+6. A window will appear asking for your PIN
+   - Enter the PIN you created during setup
+   - Click OK
+
+7. Wait a moment while the file is encrypted
+
+8. A success message will appear
+
+9. You will now see a new file with ".gpg" added to the end
+   Example: "document.pdf" becomes "document.pdf.gpg"
+
+The encrypted file is secure. The original file remains unchanged.
+
+
+HOW TO DECRYPT A FILE
+---------------------
+1. Make sure your AEPGP card is inserted in the card reader
+
+2. Find the encrypted file (.gpg file) in Windows Explorer
+
+3. Right-click on the .gpg file
+
+4. WINDOWS 11 USERS: Click "Show more options" first
+   WINDOWS 10 USERS: Skip this step
+
+5. Click "Decrypt with AEPGP"
+
+6. Enter your PIN when prompted
+
+7. Wait a moment while the file is decrypted
+
+8. A success message will appear
+
+9. The decrypted file will appear in the same folder
+   Example: "document.pdf.gpg" becomes "document.pdf"
+
+
+TIPS FOR SAFE USE
+-----------------
+✓ Always keep your AEPGP card in a safe place
+✓ Never share your PIN with anyone
+✓ Keep backup copies of important files
+✓ After encrypting, you can delete the original file (if desired)
+✓ Encrypted files can only be decrypted with YOUR card
+✓ If you lose your card, you cannot decrypt your files!
+
+
+TROUBLESHOOTING
+---------------
+
+Problem: "AEPGP card not found" error
+Solution:
+  - Make sure your card is properly inserted
+  - Check that the card reader is connected
+  - Try removing and reinserting the card
+  - Check Device Manager to ensure reader is recognized
+
+Problem: Context menu doesn't appear
+Solution:
+  - On Windows 11: Click "Show more options" first
+  - Or try SHIFT + Right-click on the file
+  - If still not visible, reinstall using AEPGP_Installer.exe
+
+Problem: "Wrong PIN" or "PIN locked"
+Solution:
+  - Make sure you're entering the correct PIN
+  - After 3 wrong attempts, the card locks for security
+  - Contact your administrator to unlock the card
+
+Problem: "GnuPG not found"
+Solution:
+  - Install GnuPG from https://www.gpg4win.org/
+  - Restart your computer after installation
+  - Try encrypting again
+
+Problem: Can't decrypt a file
+Solution:
+  - Make sure the file was encrypted for your public key
+  - Files encrypted by others require their private key to decrypt
+  - You can only decrypt files you encrypted yourself
+
+
+UNINSTALLATION
+--------------
+If you need to remove AEPGP Context Menu:
+
+1. Double-click "AEPGP_Installer.exe"
+
+2. Click the "Uninstall" button
+
+3. Confirm when prompted
+
+4. Wait for the confirmation message
+
+5. The context menu entries will be removed
+
+Note: This does NOT delete your encrypted files or your card keys.
+
+
+WINDOWS 11 USERS
+----------------
+Windows 11 has a new compact context menu. To access AEPGP options:
+
+Method 1:
+  - Right-click file
+  - Click "Show more options"
+  - Then select "Encrypt with AEPGP" or "Decrypt with AEPGP"
+
+Method 2 (Faster):
+  - Hold SHIFT while right-clicking the file
+  - This opens the full context menu directly
+
+
+FILE FORMATS
+------------
+Encrypted files have these extensions:
+  .gpg  - Standard encrypted file
+  .pgp  - Alternative encrypted format (also supported)
+  .asc  - ASCII-armored encrypted file (also supported)
+
+All three formats can be decrypted using "Decrypt with AEPGP"
+
+
+SECURITY NOTES
+--------------
+✓ Your private encryption keys NEVER leave the AEPGP card
+✓ Encryption happens using industry-standard OpenPGP protocol
+✓ Files are encrypted with strong cryptography
+✓ Your PIN is never stored anywhere - you must remember it
+✓ The AEPGP card has hardware-based security
+
+
+FREQUENTLY ASKED QUESTIONS
+--------------------------
+
+Q: Can I use this on multiple computers?
+A: Yes! Install AEPGP Context Menu on each computer, then use your
+   same AEPGP card on all of them.
+
+Q: Can I share encrypted files with others?
+A: Files are encrypted for your key only. To share encrypted files,
+   you need to use GnuPG's public key features (advanced topic).
+
+Q: What if I forget my PIN?
+A: Contact your card administrator. The card may need to be reset,
+   which means you'll lose access to files encrypted with it.
+
+Q: Can someone crack my encrypted files?
+A: Modern encryption used by AEPGP is extremely strong. As long as
+   you keep your card and PIN secure, your files are safe.
+
+Q: Do I need internet to encrypt/decrypt?
+A: No! All encryption happens locally on your computer.
+
+Q: Can I encrypt folders?
+A: Not directly. You need to compress the folder to a .zip file first,
+   then encrypt the .zip file.
+
+
+GETTING HELP
+------------
+If you need assistance:
+
+1. Re-read this guide carefully
+2. Check the Troubleshooting section
+3. Make sure GnuPG is properly installed
+4. Ensure your card reader is working
+5. Contact your IT administrator or system administrator
+
+
+VERSION INFORMATION
+-------------------
+AEPGP Context Menu Version 1.0
+Built with: Python, GnuPG, PyInstaller
+Based on: SmartPGP project (GPL v2)
+
+
+LEGAL
+-----
+This software is provided "as is" without warranty of any kind.
+Licensed under GNU General Public License v2.
+
+AEPGP Context Menu is based on the SmartPGP project developed by
+the French National Cybersecurity Agency (ANSSI).
+
+
+================================================================================
+                     Thank you for using AEPGP!
+================================================================================
