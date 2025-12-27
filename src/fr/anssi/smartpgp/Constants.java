@@ -134,7 +134,12 @@ public final class Constants {
     protected static final byte INS_GET_CHALLENGE = (byte)0x84;
     protected static final byte INS_TERMINATE_DF = (byte)0xE6;
     protected static final byte INS_ACTIVATE_FILE = (byte)0x44;
+    protected static final byte INS_GET_VERSION = (byte)0xF1;
+    protected static final byte INS_SET_RETRIES = (byte)0xF2;
 
+    protected static final byte VERSION_MAJOR = (byte)0x03;
+    protected static final byte VERSION_MINOR = (byte)0x04;
+    protected static final byte VERSION_BUILD = (byte)0x00;
 
     protected static final short SW_TERMINATED = (short)0x6285;
     protected static final short SW_MEMORY_FAILURE = (short)0x6581;

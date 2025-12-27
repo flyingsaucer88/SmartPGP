@@ -1513,6 +1513,64 @@ public final class SmartPGPApplet extends Applet implements ExtendedLength {
         }
     }
 
+    private final short processGetVersion(final byte p1, final byte p2) {
+        if((p1 != (byte)0) || (p2 != (byte)0)) {
+            ISOException.throwIt(ISO7816.SW_WRONG_P1P2);
+            return 0;
+        }
+
+        transients.buffer[0] = Constants.VERSION_MAJOR;
+        transients.buffer[1] = Constants.VERSION_MINOR;
+        transients.buffer[2] = Constants.VERSION_BUILD;
+
+        return (short)3;
+    }
+
+    private final void processSetRetries(final short lc, final byte p1, final byte p2) {
+        sensitiveData();
+        assertAdmin();
+
+        if((p1 != (byte)0) || (lc != (short)3)) {
+            ISOException.throwIt(ISO7816.SW_WRONG_DATA);
+            return;
+        }
+
+        final byte user_pin_retries = transients.buffer[0];
+        final byte user_puk_retries = transients.buffer[1];
+        final byte admin_pin_retries = transients.buffer[2];
+
+        if((user_pin_retries < 1) || (user_pin_retries > 9) ||
+           (user_puk_retries < 1) || (user_puk_retries > 9) ||
+           (admin_pin_retries < 1) || (admin_pin_retries > 9)) {
+            ISOException.throwIt(ISO7816.SW_WRONG_DATA);
+            return;
+        }
+
+        switch(p2) {
+        case (byte)0x81:
+            data.user_pin.setRetries(user_pin_retries);
+            break;
+
+        case (byte)0x82:
+            data.user_puk.setRetries(user_puk_retries);
+            break;
+
+        case (byte)0x83:
+            data.admin_pin.setRetries(admin_pin_retries);
+            break;
+
+        case (byte)0x00:
+            data.user_pin.setRetries(user_pin_retries);
+            data.user_puk.setRetries(user_puk_retries);
+            data.admin_pin.setRetries(admin_pin_retries);
+            break;
+
+        default:
+            ISOException.throwIt(ISO7816.SW_WRONG_P1P2);
+            return;
+        }
+    }
+
     private final void clearConnection() {
         data.user_pin.reset();
         data.user_puk.reset();
@@ -1672,6 +1730,14 @@ public final class SmartPGPApplet extends Applet implements ExtendedLength {
 
                 case Constants.INS_ACTIVATE_FILE:
                     processActivateFile(p1, p2);
+                    break;
+
+                case Constants.INS_GET_VERSION:
+                    available_le = processGetVersion(p1, p2);
+                    break;
+
+                case Constants.INS_SET_RETRIES:
+                    processSetRetries(lc, p1, p2);
                     break;
 
                 default:
