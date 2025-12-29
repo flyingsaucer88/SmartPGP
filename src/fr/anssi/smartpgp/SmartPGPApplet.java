@@ -1546,29 +1546,29 @@ public final class SmartPGPApplet extends Applet implements ExtendedLength {
             return;
         }
 
-        switch(p2) {
-        case (byte)0x81:
-            data.user_pin.setRetries(user_pin_retries);
-            break;
-
-        case (byte)0x82:
-            data.user_puk.setRetries(user_puk_retries);
-            break;
-
-        case (byte)0x83:
-            data.admin_pin.setRetries(admin_pin_retries);
-            break;
-
-        case (byte)0x00:
-            data.user_pin.setRetries(user_pin_retries);
-            data.user_puk.setRetries(user_puk_retries);
-            data.admin_pin.setRetries(admin_pin_retries);
-            break;
-
-        default:
-            ISOException.throwIt(ISO7816.SW_WRONG_P1P2);
-            return;
-        }
+//        switch(p2) {
+//        case (byte)0x81:
+//            data.user_pin.setRetries(user_pin_retries);
+//            break;
+//
+//        case (byte)0x82:
+//            data.user_puk.setRetries(user_puk_retries);
+//            break;
+//
+//        case (byte)0x83:
+//            data.admin_pin.setRetries(admin_pin_retries);
+//            break;
+//
+//        case (byte)0x00:
+//            data.user_pin.setRetries(user_pin_retries);
+//            data.user_puk.setRetries(user_puk_retries);
+//            data.admin_pin.setRetries(admin_pin_retries);
+//            break;
+//
+//        default:
+//            ISOException.throwIt(ISO7816.SW_WRONG_P1P2);
+//            return;
+//        }
     }
 
     private final void clearConnection() {
