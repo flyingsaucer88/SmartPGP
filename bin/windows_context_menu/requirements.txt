@@ -3,5 +3,5 @@
 # Smart card communication library
 pyscard>=2.0.0
 
-# For building executable (development only)
-pyinstaller>=5.0.0
+# For building executable (development only - not needed for MSI installation)
+# pyinstaller>=5.0.0
