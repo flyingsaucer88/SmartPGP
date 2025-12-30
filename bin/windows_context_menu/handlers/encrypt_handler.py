@@ -13,6 +13,10 @@ from pathlib import Path
 # Add parent directory to path to import card_utils
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import card_utils
+from debug_logger import get_logger
+
+# Initialize logger
+logger = get_logger()
 
 
 def find_gpg_executable():
@@ -68,29 +72,53 @@ def encrypt_file(filepath):
     Args:
         filepath: Path to the file to encrypt
     """
+    logger.log_operation_start("Encryption", filepath)
+    logger.log_system_info()
+
     # Verify file exists
     if not os.path.exists(filepath):
+        logger.error(f"File not found: {filepath}")
         card_utils.show_error_dialog(
             f"File not found:\n{filepath}",
             "AEPGP Encryption Error"
         )
+        logger.log_operation_end("Encryption", False, "File not found")
         return
 
+    logger.info(f"File exists, size: {os.path.getsize(filepath)} bytes")
+
     # Check for AEPGP card
+    logger.info("Searching for AEPGP card...")
     card, error = card_utils.find_aepgp_card()
     if error:
+        logger.error(f"Card detection failed: {error}")
+        logger.log_card_detection(0, False)
         card_utils.show_error_dialog(
             f"Cannot encrypt file:\n\n{error}",
             "AEPGP Card Not Found"
         )
+        logger.log_operation_end("Encryption", False, "Card not found")
         return
+
+    # Log card detection success
+    try:
+        from smartcard.util import toHexString
+        atr = card.connection.getATR()
+        atr_hex = toHexString(atr)
+        logger.log_card_detection(1, True, atr_hex)
+        logger.info(f"Card found in reader: {card.reader}")
+    except Exception as e:
+        logger.warning(f"Could not get card ATR: {e}")
 
     # Card found, disconnect as GPG will handle the connection
     card.disconnect()
+    logger.info("Card connection closed (GPG will reconnect)")
 
     # Find GnuPG
+    logger.info("Searching for GnuPG executable...")
     gpg_path = find_gpg_executable()
     if not gpg_path:
+        logger.error("GnuPG not found on system")
         card_utils.show_error_dialog(
             "GnuPG (gpg.exe) not found on your system.\n\n"
             "Please install GnuPG from:\n"
@@ -99,7 +127,10 @@ def encrypt_file(filepath):
             "https://www.gpg4win.org/",
             "GnuPG Not Found"
         )
+        logger.log_operation_end("Encryption", False, "GnuPG not found")
         return
+
+    logger.info(f"Found GnuPG at: {gpg_path}")
 
     # Prepare output filename
     output_path = filepath + ".gpg"
@@ -127,6 +158,8 @@ def encrypt_file(filepath):
             filepath
         ]
 
+        logger.info(f"Executing GPG command: {' '.join(cmd)}")
+
         # Run GPG (this will prompt for PIN via pinentry)
         result = subprocess.run(
             cmd,
@@ -135,8 +168,15 @@ def encrypt_file(filepath):
             creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0
         )
 
+        logger.debug(f"GPG return code: {result.returncode}")
+        if result.stdout:
+            logger.debug(f"GPG stdout: {result.stdout}")
+        if result.stderr:
+            logger.debug(f"GPG stderr: {result.stderr}")
+
         if result.returncode == 0:
             # Success!
+            logger.info(f"Encryption successful, output: {output_path}")
             card_utils.show_info_dialog(
                 f"File encrypted successfully!\n\n"
                 f"Original: {os.path.basename(filepath)}\n"
@@ -144,19 +184,24 @@ def encrypt_file(filepath):
                 f"Location: {os.path.dirname(output_path)}",
                 "Encryption Successful"
             )
+            logger.log_operation_end("Encryption", True)
         else:
             # Encryption failed
             error_msg = result.stderr if result.stderr else "Unknown error"
+            logger.error(f"GPG encryption failed: {error_msg}")
             card_utils.show_error_dialog(
                 f"Encryption failed:\n\n{error_msg}",
                 "Encryption Error"
             )
+            logger.log_operation_end("Encryption", False, error_msg)
 
     except Exception as e:
+        logger.error("Exception during encryption", e)
         card_utils.show_error_dialog(
             f"Error during encryption:\n\n{str(e)}",
             "Encryption Error"
         )
+        logger.log_operation_end("Encryption", False, str(e))
 
 
 def main():
