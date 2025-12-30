@@ -11,10 +11,15 @@ from cx_Freeze import setup, Executable
 
 # Application metadata
 APP_NAME = "AEPGP Context Menu"
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.0.1"  # Incremented version for upgrade testing
 APP_DESCRIPTION = "Windows Explorer context menu for file encryption with AEPGP cards"
 APP_AUTHOR = "AEPGP"
 APP_COMPANY = "AEPGP"
+
+# IMPORTANT: This upgrade code must remain the same across all versions
+# It allows newer versions to automatically uninstall older ones
+# Generate once with: python -c "import uuid; print(uuid.uuid4())"
+UPGRADE_CODE = "{A1B2C3D4-E5F6-4A5B-8C9D-0E1F2A3B4C5D}"
 
 # Files to include
 include_files = [
@@ -54,6 +59,8 @@ bdist_msi_options = {
     'add_to_path': False,
     'initial_target_dir': r'[ProgramFilesFolder]\AEPGP Context Menu',
     'install_icon': 'aepgp_icon.ico' if os.path.exists('aepgp_icon.ico') else None,
+    'upgrade_code': UPGRADE_CODE,  # Enables automatic upgrade of older versions
+    'target_name': 'AEPGP_Context_Menu',  # Consistent name for all versions
 }
 
 # Executable configuration
