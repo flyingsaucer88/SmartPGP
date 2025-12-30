@@ -19,10 +19,14 @@ except ImportError:
 # OpenPGP AID (Application Identifier)
 OPENPGP_AID = [0xD2, 0x76, 0x00, 0x01, 0x24, 0x01]
 
-# AmbiSecure Token ATR (Answer To Reset)
-# Expected ATR: 3B D5 18 FF 81 B1 FE 45 1F C3 80 73 C8 21 10 6F
-AMBISECURE_ATR = [0x3B, 0xD5, 0x18, 0xFF, 0x81, 0xB1, 0xFE, 0x45,
-                  0x1F, 0xC3, 0x80, 0x73, 0xC8, 0x21, 0x10, 0x6F]
+# Supported ATRs (Answer To Reset) for AEPGP/SmartPGP cards
+# Multiple ATRs are supported to work with different card manufacturers
+SUPPORTED_ATRS = [
+    # Original AmbiSecure Token ATR
+    [0x3B, 0xD5, 0x18, 0xFF, 0x81, 0xB1, 0xFE, 0x45, 0x1F, 0xC3, 0x80, 0x73, 0xC8, 0x21, 0x10, 0x6F],
+    # SmartPGP on Gemalto/NXP JCOP cards: 3B D5 18 FF 81 91 FE 1F C3 80 73 C8 21 10 0A
+    [0x3B, 0xD5, 0x18, 0xFF, 0x81, 0x91, 0xFE, 0x1F, 0xC3, 0x80, 0x73, 0xC8, 0x21, 0x10, 0x0A],
+]
 
 
 class AEPGPCard:
@@ -50,23 +54,24 @@ class AEPGPCard:
             pass
 
 
-def verify_ambisecure_atr(atr):
+def verify_supported_atr(atr):
     """
-    Verify if the ATR matches the AmbiSecure token.
+    Verify if the ATR matches any supported AEPGP/SmartPGP card.
 
     Args:
         atr: ATR bytes from the card
 
     Returns:
-        bool: True if ATR matches AmbiSecure token, False otherwise
+        bool: True if ATR matches a supported card, False otherwise
     """
-    return list(atr) == AMBISECURE_ATR
+    atr_list = list(atr)
+    return any(atr_list == supported_atr for supported_atr in SUPPORTED_ATRS)
 
 
 def find_aepgp_card():
     """
-    Search for an AmbiSecure AEPGP card in all available readers.
-    Only accepts cards with the specific AmbiSecure ATR.
+    Search for an AEPGP/SmartPGP card in all available readers.
+    Supports multiple card types with different ATRs.
 
     Returns:
         tuple: (AEPGPCard object, None) on success
@@ -84,10 +89,10 @@ def find_aepgp_card():
                 connection = reader.createConnection()
                 connection.connect()
 
-                # Get ATR and verify it's an AmbiSecure token
+                # Get ATR and verify it's a supported card
                 atr = connection.getATR()
-                if not verify_ambisecure_atr(atr):
-                    # Not an AmbiSecure token, skip this card
+                if not verify_supported_atr(atr):
+                    # Not a supported card, skip this card
                     try:
                         connection.disconnect()
                     except:
