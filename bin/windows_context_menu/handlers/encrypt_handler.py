@@ -3,71 +3,32 @@ AEPGP File Encryption Handler
 
 This script is called when the user right-clicks a file and selects
 "Encrypt with AEPGP" from the context menu.
+
+Uses RSA+AES hybrid encryption with direct APDU access to AEPGP card.
 """
 
 import sys
 import os
-import subprocess
-from pathlib import Path
 
 # Add parent directory to path to import card_utils
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import card_utils
 from debug_logger import get_logger
+from rsa_crypto import encrypt_file_with_card_key
 
 # Initialize logger
 logger = get_logger()
 
 
-def find_gpg_executable():
-    """
-    Find the GnuPG executable on the system.
-
-    Returns:
-        str: Path to gpg.exe or None if not found
-    """
-    # Common GnuPG installation paths on Windows
-    possible_paths = [
-        r"C:\Program Files (x86)\GnuPG\bin\gpg.exe",
-        r"C:\Program Files\GnuPG\bin\gpg.exe",
-        r"C:\Program Files (x86)\GNU\GnuPG\gpg.exe",
-        r"C:\Program Files\GNU\GnuPG\gpg.exe",
-    ]
-
-    # Check if gpg is in PATH
-    try:
-        result = subprocess.run(["gpg", "--version"], capture_output=True, text=True)
-        if result.returncode == 0:
-            return "gpg"
-    except FileNotFoundError:
-        pass
-
-    # Check common installation paths
-    for path in possible_paths:
-        if os.path.exists(path):
-            return path
-
-    return None
-
-
-def get_card_key_info(card):
-    """
-    Get the public key information from the AEPGP card.
-
-    Args:
-        card: AEPGPCard object
-
-    Returns:
-        str: Key ID or fingerprint for encryption
-    """
-    # For now, we'll let GPG auto-detect the card key
-    # In a more advanced implementation, you could query the card directly
-    return None
-
-
 def encrypt_file(filepath):
     """
-    Encrypt a file using GnuPG with the AEPGP card.
+    Encrypt a file using RSA+AES hybrid encryption with the AEPGP card's public key.
+
+    This function uses direct APDU communication with the card:
+    - Reads RSA public key directly from card via APDU (no GPG keyring)
+    - Encrypts file using AES-256-GCM for performance
+    - Encrypts AES key using RSA-OAEP with card's public key
+    - Creates .enc file that can be decrypted with the card's private key
 
     Args:
         filepath: Path to the file to encrypt
@@ -87,53 +48,8 @@ def encrypt_file(filepath):
 
     logger.info(f"File exists, size: {os.path.getsize(filepath)} bytes")
 
-    # Check for AEPGP card
-    logger.info("Searching for AEPGP card...")
-    card, error = card_utils.find_aepgp_card()
-    if error:
-        logger.error(f"Card detection failed: {error}")
-        logger.log_card_detection(0, False)
-        card_utils.show_error_dialog(
-            f"Cannot encrypt file:\n\n{error}",
-            "AEPGP Card Not Found"
-        )
-        logger.log_operation_end("Encryption", False, "Card not found")
-        return
-
-    # Log card detection success
-    try:
-        from smartcard.util import toHexString
-        atr = card.connection.getATR()
-        atr_hex = toHexString(atr)
-        logger.log_card_detection(1, True, atr_hex)
-        logger.info(f"Card found in reader: {card.reader}")
-    except Exception as e:
-        logger.warning(f"Could not get card ATR: {e}")
-
-    # Card found, disconnect as GPG will handle the connection
-    card.disconnect()
-    logger.info("Card connection closed (GPG will reconnect)")
-
-    # Find GnuPG
-    logger.info("Searching for GnuPG executable...")
-    gpg_path = find_gpg_executable()
-    if not gpg_path:
-        logger.error("GnuPG not found on system")
-        card_utils.show_error_dialog(
-            "GnuPG (gpg.exe) not found on your system.\n\n"
-            "Please install GnuPG from:\n"
-            "https://www.gnupg.org/download/\n\n"
-            "Or install Gpg4win from:\n"
-            "https://www.gpg4win.org/",
-            "GnuPG Not Found"
-        )
-        logger.log_operation_end("Encryption", False, "GnuPG not found")
-        return
-
-    logger.info(f"Found GnuPG at: {gpg_path}")
-
     # Prepare output filename
-    output_path = filepath + ".gpg"
+    output_path = filepath + ".enc"
 
     # Check if output file already exists
     if os.path.exists(output_path):
@@ -143,52 +59,37 @@ def encrypt_file(filepath):
             "File Already Exists"
         )
         if not overwrite:
+            logger.info("User cancelled overwrite")
+            logger.log_operation_end("Encryption", False, "User cancelled")
             return
 
     try:
-        # Build GPG command
-        # Using --symmetric for password-based encryption
-        # Or use --encrypt --recipient if you want public key encryption
-        cmd = [
-            gpg_path,
-            "--armor",  # ASCII armored output (optional)
-            "--output", output_path,
-            "--encrypt",
-            "--sign",  # Sign and encrypt
-            filepath
-        ]
+        logger.info("Starting RSA+AES hybrid encryption with AEPGP card...")
 
-        logger.info(f"Executing GPG command: {' '.join(cmd)}")
+        # Encrypt the file using RSA+AES hybrid encryption
+        success, error_msg = encrypt_file_with_card_key(filepath, output_path)
 
-        # Run GPG (this will prompt for PIN via pinentry)
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == 'win32' else 0
-        )
-
-        logger.debug(f"GPG return code: {result.returncode}")
-        if result.stdout:
-            logger.debug(f"GPG stdout: {result.stdout}")
-        if result.stderr:
-            logger.debug(f"GPG stderr: {result.stderr}")
-
-        if result.returncode == 0:
+        if success:
             # Success!
             logger.info(f"Encryption successful, output: {output_path}")
+
+            # Get file sizes for display
+            original_size = os.path.getsize(filepath)
+            encrypted_size = os.path.getsize(output_path)
+
             card_utils.show_info_dialog(
                 f"File encrypted successfully!\n\n"
-                f"Original: {os.path.basename(filepath)}\n"
-                f"Encrypted: {os.path.basename(output_path)}\n\n"
-                f"Location: {os.path.dirname(output_path)}",
+                f"Original: {os.path.basename(filepath)} ({original_size:,} bytes)\n"
+                f"Encrypted: {os.path.basename(output_path)} ({encrypted_size:,} bytes)\n\n"
+                f"Location: {os.path.dirname(output_path)}\n\n"
+                f"Encryption: RSA-2048 + AES-256-GCM\n"
+                f"Security: Card-based encryption (no GPG keyring required)",
                 "Encryption Successful"
             )
             logger.log_operation_end("Encryption", True)
         else:
             # Encryption failed
-            error_msg = result.stderr if result.stderr else "Unknown error"
-            logger.error(f"GPG encryption failed: {error_msg}")
+            logger.error(f"Encryption failed: {error_msg}")
             card_utils.show_error_dialog(
                 f"Encryption failed:\n\n{error_msg}",
                 "Encryption Error"
@@ -197,6 +98,8 @@ def encrypt_file(filepath):
 
     except Exception as e:
         logger.error("Exception during encryption", e)
+        import traceback
+        logger.error(traceback.format_exc())
         card_utils.show_error_dialog(
             f"Error during encryption:\n\n{str(e)}",
             "Encryption Error"

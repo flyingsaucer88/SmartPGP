@@ -8,6 +8,18 @@ on Windows systems.
 import sys
 import os
 
+# Import debug logger
+try:
+    from debug_logger import get_logger
+    logger = get_logger()
+except ImportError:
+    # Fallback if logger not available
+    class DummyLogger:
+        def info(self, msg): pass
+        def error(self, msg, e=None): pass
+        def debug(self, msg): pass
+    logger = DummyLogger()
+
 try:
     from smartcard.System import readers
     from smartcard.Exceptions import NoCardException, CardConnectionException
@@ -36,14 +48,26 @@ class AEPGPCard:
         self.connection = connection
         self.reader = connection.getReader()
 
+    def _log_apdu(self, command, response, sw1, sw2):
+        """Log APDU command and response"""
+        cmd_hex = toHexString(command)
+        resp_hex = toHexString(response) if response else ""
+        logger.debug(f"APDU CMD: {cmd_hex}")
+        logger.debug(f"APDU RSP: {resp_hex} SW={sw1:02X}{sw2:02X}")
+
     def select_applet(self):
         """Select the OpenPGP applet on the card"""
         SELECT_APDU = [0x00, 0xA4, 0x04, 0x00, len(OPENPGP_AID)] + OPENPGP_AID + [0x00]
+        logger.info("Selecting OpenPGP applet...")
         response, sw1, sw2 = self.connection.transmit(SELECT_APDU)
+        self._log_apdu(SELECT_APDU, response, sw1, sw2)
 
         if sw1 != 0x90 or sw2 != 0x00:
-            raise Exception(f"Failed to select OpenPGP applet: SW={sw1:02X}{sw2:02X}")
+            error_msg = f"Failed to select OpenPGP applet: SW={sw1:02X}{sw2:02X}"
+            logger.error(error_msg)
+            raise Exception(error_msg)
 
+        logger.info("OpenPGP applet selected successfully")
         return response
 
     def disconnect(self):

@@ -1,14 +1,12 @@
 """
-AEPGP Windows Context Menu Uninstaller
+AEPGP Windows Context Menu Uninstaller - Cascading Menu Version
 
-This script removes the Windows Explorer context menu entries for AEPGP.
+This script removes the AEPGP cascading context menu entries.
 
-IMPORTANT: This script requires Administrator privileges to modify the Windows
-registry (HKEY_CLASSES_ROOT).
+IMPORTANT: This script requires Administrator privileges.
 """
 
 import sys
-import os
 import winreg
 import ctypes
 
@@ -28,14 +26,13 @@ def elevate_privileges():
         return False
 
     try:
-        # Re-run the script with elevation
         ctypes.windll.shell32.ShellExecuteW(
             None,
-            "runas",  # Request elevation
-            sys.executable,  # Python interpreter
-            " ".join([f'"{arg}"' for arg in sys.argv]),  # Script and arguments
+            "runas",
+            sys.executable,
+            " ".join([f'"{arg}"' for arg in sys.argv]),
             None,
-            1  # SW_SHOWNORMAL
+            1
         )
         return True
     except Exception as e:
@@ -43,112 +40,92 @@ def elevate_privileges():
         return False
 
 
-def delete_registry_key(key_path):
-    """
-    Recursively delete a registry key and all its subkeys.
-
-    Args:
-        key_path: Registry key path relative to HKEY_CLASSES_ROOT
-
-    Returns:
-        bool: True if successful, False otherwise
-    """
+def delete_registry_key(root_key, key_path):
+    """Recursively delete a registry key and all its subkeys"""
     try:
         # Open the key
-        key = winreg.OpenKey(winreg.HKEY_CLASSES_ROOT, key_path, 0, winreg.KEY_ALL_ACCESS)
+        key = winreg.OpenKey(root_key, key_path, 0, winreg.KEY_ALL_ACCESS)
 
-        # Enumerate and delete all subkeys first
+        # Get all subkeys
         subkeys = []
-        i = 0
-        while True:
-            try:
+        try:
+            i = 0
+            while True:
                 subkey_name = winreg.EnumKey(key, i)
                 subkeys.append(subkey_name)
                 i += 1
-            except OSError:
-                break
+        except WindowsError:
+            pass
 
-        # Delete subkeys recursively
+        # Recursively delete subkeys
         for subkey_name in subkeys:
-            delete_registry_key(key_path + "\\" + subkey_name)
+            delete_registry_key(root_key, f"{key_path}\\{subkey_name}")
 
+        # Close and delete the key
         winreg.CloseKey(key)
-
-        # Delete the key itself
-        winreg.DeleteKey(winreg.HKEY_CLASSES_ROOT, key_path)
+        winreg.DeleteKey(root_key, key_path)
         return True
 
     except FileNotFoundError:
-        # Key doesn't exist, that's okay
+        return False
+    except Exception as e:
+        print(f"Warning: Could not delete {key_path}: {e}")
+        return False
+
+
+def uninstall_cascading_menus():
+    """Remove all AEPGP cascading context menu entries"""
+    success_count = 0
+
+    print("\nRemoving AEPGP context menu entries...")
+
+    # Remove AEPGP menu for all files
+    if delete_registry_key(winreg.HKEY_CLASSES_ROOT, r"*\shell\AEPGP"):
+        print("  ✓ Removed AEPGP menu from files")
+        success_count += 1
+    else:
+        print("  ⚠ AEPGP file menu not found (may not be installed)")
+
+    # Remove AEPGP menu from desktop background
+    if delete_registry_key(winreg.HKEY_CLASSES_ROOT, r"Directory\Background\shell\AEPGP"):
+        print("  ✓ Removed AEPGP menu from desktop")
+        success_count += 1
+    else:
+        print("  ⚠ AEPGP desktop menu not found (may not be installed)")
+
+    # Remove old and current flat menu entries
+    old_keys = [
+        r"*\shell\AEPGP.Encrypt",
+        r"*\shell\EncryptWithAEPGP",
+        r"*\shell\AEPGP_Encrypt",
+        r"*\shell\AEPGP_Decrypt",
+        r"*\shell\AEPGP_GenerateKeys",
+        r"*\shell\AEPGP_DeleteKeys",
+        r"*\shell\AEPGP_ChangePIN",
+        r"*\shell\AEPGP_ImportPFX",
+        r"*\shell\Encrypt with AEPGP",
+        r".pfx\shell\AEPGP_ImportPFX",
+        r".p12\shell\AEPGP_ImportPFX",
+    ]
+
+    for old_key in old_keys:
+        if delete_registry_key(winreg.HKEY_CLASSES_ROOT, old_key):
+            print(f"  ✓ Removed entry: {old_key}")
+            success_count += 1
+
+    return success_count > 0
+
+
+def remove_version_info():
+    """Remove version information from registry"""
+    try:
+        winreg.DeleteKey(winreg.HKEY_CURRENT_USER, r"Software\AEPGP\ContextMenu")
+        print("  ✓ Removed version information")
         return True
+    except FileNotFoundError:
+        return True  # Already doesn't exist
     except Exception as e:
-        print(f"Error deleting key {key_path}: {e}")
-        return False
-
-
-def uninstall_encrypt_menu():
-    """Remove the 'Encrypt with AEPGP' context menu item"""
-    try:
-        key_path = r"*\shell\AEPGP.Encrypt"
-        if delete_registry_key(key_path):
-            print("✓ Removed 'Encrypt with AEPGP' menu item")
-            return True
-        else:
-            print("✗ Failed to remove 'Encrypt with AEPGP' menu item")
-            return False
-    except Exception as e:
-        print(f"✗ Error removing encrypt menu: {e}")
-        return False
-
-
-def uninstall_decrypt_menu():
-    """Remove the 'Decrypt with AEPGP' context menu items"""
-    try:
-        extensions = [".gpg", ".pgp", ".asc"]
-        success_count = 0
-
-        for ext in extensions:
-            try:
-                key_path = f"{ext}\\shell\\AEPGP.Decrypt"
-                if delete_registry_key(key_path):
-                    print(f"✓ Removed 'Decrypt with AEPGP' for {ext} files")
-                    success_count += 1
-                else:
-                    print(f"✗ Failed to remove 'Decrypt with AEPGP' for {ext} files")
-            except Exception as e:
-                print(f"✗ Error removing decrypt menu for {ext}: {e}")
-
-        return success_count > 0
-
-    except Exception as e:
-        print(f"✗ Error removing decrypt menu: {e}")
-        return False
-
-
-def verify_uninstallation():
-    """Verify that the context menu entries were removed"""
-    try:
-        # Check if encrypt menu still exists
-        try:
-            key = winreg.OpenKey(winreg.HKEY_CLASSES_ROOT, r"*\shell\AEPGP.Encrypt")
-            winreg.CloseKey(key)
-            print("\nWarning: Encrypt menu still exists in registry")
-            return False
-        except FileNotFoundError:
-            print("\n✓ Encrypt menu successfully removed")
-
-        # Check if decrypt menu still exists
-        try:
-            key = winreg.OpenKey(winreg.HKEY_CLASSES_ROOT, r".gpg\shell\AEPGP.Decrypt")
-            winreg.CloseKey(key)
-            print("Warning: Decrypt menu still exists in registry")
-            return False
-        except FileNotFoundError:
-            print("✓ Decrypt menu successfully removed")
-
-        return True
-    except Exception as e:
-        print(f"\nWarning: Could not verify uninstallation: {e}")
+        print(f"  ⚠ Could not remove version info: {e}")
         return False
 
 
@@ -170,7 +147,7 @@ def main():
         print("\nThis uninstaller requires Administrator privileges.")
         print("Requesting elevation...")
         if elevate_privileges():
-            sys.exit(0)  # Exit this instance, elevated instance will run
+            sys.exit(0)
         else:
             print("\nERROR: Could not obtain Administrator privileges.")
             print("Please run this script as Administrator.")
@@ -180,40 +157,42 @@ def main():
 
     print("\nRunning with Administrator privileges ✓")
 
-    # Confirm uninstallation
-    print("\nThis will remove AEPGP context menu items from Windows Explorer.")
-    response = input("Do you want to continue? (yes/no): ")
+    # Confirm uninstallation (unless --silent flag)
+    if "--silent" not in sys.argv:
+        print("\nThis will remove all AEPGP context menu entries.")
+        response = input("Continue with uninstallation? (yes/no): ")
 
-    if response.lower() not in ['yes', 'y']:
-        print("\nUninstallation cancelled.")
-        print("Press Enter to exit...")
-        input()
-        sys.exit(0)
+        if response.lower() not in ['yes', 'y']:
+            print("\nUninstallation cancelled.")
+            print("Press Enter to exit...")
+            input()
+            sys.exit(0)
 
-    # Uninstall menu items
+    # Perform uninstallation
     print("\n" + "=" * 70)
-    print("Removing context menu items...")
+    print("Uninstalling AEPGP context menu...")
     print("=" * 70)
 
-    encrypt_ok = uninstall_encrypt_menu()
-    decrypt_ok = uninstall_decrypt_menu()
-
-    # Verify uninstallation
-    print("\n" + "=" * 70)
-    print("Verifying uninstallation...")
-    print("=" * 70)
-    verify_uninstallation()
+    menu_removed = uninstall_cascading_menus()
+    version_removed = remove_version_info()
 
     # Summary
     print("\n" + "=" * 70)
-    if encrypt_ok or decrypt_ok:
+    if menu_removed:
         print("Uninstallation completed successfully! ✓")
-        print("\nAEPGP context menu items have been removed.")
+        print("\nAEPGP context menu entries have been removed.")
+        print("You may need to restart Windows Explorer for changes to take effect.")
+        print("\nTo restart Explorer:")
+        print("  1. Press Ctrl+Shift+Esc (Task Manager)")
+        print("  2. Find 'Windows Explorer'")
+        print("  3. Right-click → Restart")
     else:
-        print("No AEPGP context menu items were found.")
+        print("No AEPGP context menu entries found.")
+        print("AEPGP may not be installed or was already uninstalled.")
 
-    print("\nPress Enter to exit...")
-    input()
+    if not "--silent" in sys.argv:
+        print("\nPress Enter to exit...")
+        input()
 
 
 if __name__ == "__main__":

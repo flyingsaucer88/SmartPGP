@@ -3,5 +3,11 @@
 # Smart card communication library
 pyscard>=2.0.0
 
+# OpenPGP encryption/decryption without GPG
+PGPy>=0.6.0
+
+# For parsing certificates and keys
+cryptography>=41.0.0
+
 # For building executable (development only - not needed for MSI installation)
 # pyinstaller>=5.0.0

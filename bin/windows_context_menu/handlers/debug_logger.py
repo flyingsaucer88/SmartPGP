@@ -32,7 +32,7 @@ class DebugLogger:
 
     def log(self, level, message, exception=None):
         """
-        Write a log entry.
+        Write a log entry to the TOP of the file.
 
         Args:
             level: Log level (INFO, WARNING, ERROR, DEBUG)
@@ -45,19 +45,33 @@ class DebugLogger:
         try:
             timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
 
-            with open(self.log_file, 'a', encoding='utf-8') as f:
-                f.write(f"\n{'='*80}\n")
-                f.write(f"[{timestamp}] [{level}]\n")
-                f.write(f"{message}\n")
+            # Build the new log entry
+            new_entry = f"\n{'='*80}\n"
+            new_entry += f"[{timestamp}] [{level}]\n"
+            new_entry += f"{message}\n"
 
-                if exception:
-                    f.write(f"\nException Details:\n")
-                    f.write(f"Type: {type(exception).__name__}\n")
-                    f.write(f"Message: {str(exception)}\n")
-                    f.write(f"\nTraceback:\n")
-                    f.write(traceback.format_exc())
+            if exception:
+                new_entry += f"\nException Details:\n"
+                new_entry += f"Type: {type(exception).__name__}\n"
+                new_entry += f"Message: {str(exception)}\n"
+                new_entry += f"\nTraceback:\n"
+                new_entry += traceback.format_exc()
 
-                f.write(f"{'='*80}\n")
+            new_entry += f"{'='*80}\n\n"
+
+            # Read existing content if file exists
+            existing_content = ""
+            if os.path.exists(self.log_file):
+                try:
+                    with open(self.log_file, 'r', encoding='utf-8') as f:
+                        existing_content = f.read()
+                except:
+                    pass  # If read fails, start fresh
+
+            # Write new entry at the top
+            with open(self.log_file, 'w', encoding='utf-8') as f:
+                f.write(new_entry)
+                f.write(existing_content)
 
         except Exception as e:
             # If logging fails, don't crash the main operation

@@ -1,8 +1,8 @@
 """
-AEPGP Windows Context Menu Installer
+AEPGP Windows Context Menu Installer - Cascading Menu Version
 
-This script installs Windows Explorer context menu entries for encrypting and
-decrypting files with AEPGP cards.
+This script installs a cascading submenu structure for AEPGP operations.
+All AEPGP options appear under a single "AEPGP" submenu.
 
 IMPORTANT: This script requires Administrator privileges to modify the Windows
 registry (HKEY_CLASSES_ROOT).
@@ -12,6 +12,11 @@ import sys
 import os
 import winreg
 import ctypes
+
+# Version tracking
+CURRENT_VERSION = "1.2.12"
+VERSION_REG_KEY = r"Software\AEPGP\ContextMenu"
+VERSION_VALUE_NAME = "Version"
 
 
 def is_admin():
@@ -51,128 +56,214 @@ def get_script_paths():
 
     encrypt_handler = os.path.join(handlers_dir, "encrypt_handler.py")
     decrypt_handler = os.path.join(handlers_dir, "decrypt_handler.py")
+    generate_keys_handler = os.path.join(handlers_dir, "generate_keys_handler.py")
+    delete_keys_handler = os.path.join(handlers_dir, "delete_keys_handler.py")
+    import_pfx_handler = os.path.join(handlers_dir, "import_pfx_handler.py")
+    change_pin_handler = os.path.join(handlers_dir, "change_pin_handler.py")
 
     # Verify handlers exist
     if not os.path.exists(encrypt_handler):
         raise FileNotFoundError(f"Encrypt handler not found: {encrypt_handler}")
     if not os.path.exists(decrypt_handler):
         raise FileNotFoundError(f"Decrypt handler not found: {decrypt_handler}")
+    if not os.path.exists(generate_keys_handler):
+        raise FileNotFoundError(f"Generate keys handler not found: {generate_keys_handler}")
+    if not os.path.exists(delete_keys_handler):
+        raise FileNotFoundError(f"Delete keys handler not found: {delete_keys_handler}")
+    if not os.path.exists(import_pfx_handler):
+        raise FileNotFoundError(f"Import PFX handler not found: {import_pfx_handler}")
+    if not os.path.exists(change_pin_handler):
+        raise FileNotFoundError(f"Change PIN handler not found: {change_pin_handler}")
 
-    return encrypt_handler, decrypt_handler
+    return encrypt_handler, decrypt_handler, generate_keys_handler, delete_keys_handler, import_pfx_handler, change_pin_handler
 
 
-def install_encrypt_menu(encrypt_handler):
+def install_cascading_menu_for_all_files(handlers):
     """
-    Install the "Encrypt with AEPGP" context menu item for all files.
+    Install flat menu items for all files (*).
 
-    Args:
-        encrypt_handler: Path to encrypt_handler.py
+    Creates individual menu items:
+    Right-click any file →
+        ├── AEPGP: Encrypt File
+        ├── AEPGP: Decrypt File
+        ├── AEPGP: Generate Keys
+        ├── AEPGP: Delete Keys
+        ├── AEPGP: Change PIN
+        └── AEPGP: Import PFX
     """
+    encrypt_handler, decrypt_handler, generate_keys_handler, delete_keys_handler, import_pfx_handler, change_pin_handler = handlers
+
     try:
-        # Create registry key for all files (*)
-        key_path = r"*\shell\AEPGP.Encrypt"
-        key = winreg.CreateKey(winreg.HKEY_CLASSES_ROOT, key_path)
-
-        # Set the menu text
-        winreg.SetValue(key, "", winreg.REG_SZ, "Encrypt with AEPGP")
-
-        # Create the command subkey
-        cmd_key = winreg.CreateKey(key, "command")
-
-        # Set the command to execute
-        # Use pythonw.exe to avoid showing a console window
-        python_exe = sys.executable.replace("python.exe", "pythonw.exe")
-        if not os.path.exists(python_exe):
-            python_exe = sys.executable  # Fall back to python.exe
-
-        command = f'"{python_exe}" "{encrypt_handler}" "%1"'
-        winreg.SetValue(cmd_key, "", winreg.REG_SZ, command)
-
-        winreg.CloseKey(cmd_key)
-        winreg.CloseKey(key)
-
-        print(f"✓ Installed 'Encrypt with AEPGP' menu item")
-        return True
-
-    except Exception as e:
-        print(f"✗ Failed to install encrypt menu: {e}")
-        return False
-
-
-def install_decrypt_menu(decrypt_handler):
-    """
-    Install the "Decrypt with AEPGP" context menu item for encrypted files.
-
-    Args:
-        decrypt_handler: Path to decrypt_handler.py
-    """
-    try:
-        # Python exe (use pythonw to avoid console window)
         python_exe = sys.executable.replace("python.exe", "pythonw.exe")
         if not os.path.exists(python_exe):
             python_exe = sys.executable
 
-        # Install for multiple encrypted file extensions
-        extensions = [".gpg", ".pgp", ".asc"]
-        success_count = 0
+        # 1. AEPGP: Encrypt File
+        encrypt_key = winreg.CreateKey(winreg.HKEY_CLASSES_ROOT, r"*\shell\AEPGP_Encrypt")
+        winreg.SetValueEx(encrypt_key, "MUIVerb", 0, winreg.REG_SZ, "AEPGP: Encrypt File")
+        winreg.SetValueEx(encrypt_key, "Position", 0, winreg.REG_SZ, "Top")
+        encrypt_cmd_key = winreg.CreateKey(encrypt_key, "command")
+        winreg.SetValue(encrypt_cmd_key, "", winreg.REG_SZ, f'"{python_exe}" "{encrypt_handler}" "%1"')
+        winreg.CloseKey(encrypt_cmd_key)
+        winreg.CloseKey(encrypt_key)
+        print("  ✓ Added 'AEPGP: Encrypt File'")
 
-        for ext in extensions:
-            try:
-                # Create registry key for this extension
-                key_path = f"{ext}\\shell\\AEPGP.Decrypt"
-                key = winreg.CreateKey(winreg.HKEY_CLASSES_ROOT, key_path)
+        # 2. AEPGP: Decrypt File
+        decrypt_key = winreg.CreateKey(winreg.HKEY_CLASSES_ROOT, r"*\shell\AEPGP_Decrypt")
+        winreg.SetValueEx(decrypt_key, "MUIVerb", 0, winreg.REG_SZ, "AEPGP: Decrypt File")
+        winreg.SetValueEx(decrypt_key, "Position", 0, winreg.REG_SZ, "Top")
+        decrypt_cmd_key = winreg.CreateKey(decrypt_key, "command")
+        winreg.SetValue(decrypt_cmd_key, "", winreg.REG_SZ, f'"{python_exe}" "{decrypt_handler}" "%1"')
+        winreg.CloseKey(decrypt_cmd_key)
+        winreg.CloseKey(decrypt_key)
+        print("  ✓ Added 'AEPGP: Decrypt File'")
 
-                # Set the menu text
-                winreg.SetValue(key, "", winreg.REG_SZ, "Decrypt with AEPGP")
+        # 3. AEPGP: Generate Keys
+        genkeys_key = winreg.CreateKey(winreg.HKEY_CLASSES_ROOT, r"*\shell\AEPGP_GenerateKeys")
+        winreg.SetValueEx(genkeys_key, "MUIVerb", 0, winreg.REG_SZ, "AEPGP: Generate Keys")
+        winreg.SetValueEx(genkeys_key, "Position", 0, winreg.REG_SZ, "Top")
+        genkeys_cmd_key = winreg.CreateKey(genkeys_key, "command")
+        winreg.SetValue(genkeys_cmd_key, "", winreg.REG_SZ, f'"{python_exe}" "{generate_keys_handler}"')
+        winreg.CloseKey(genkeys_cmd_key)
+        winreg.CloseKey(genkeys_key)
+        print("  ✓ Added 'AEPGP: Generate Keys'")
 
-                # Create the command subkey
-                cmd_key = winreg.CreateKey(key, "command")
+        # 4. AEPGP: Delete Keys
+        delkeys_key = winreg.CreateKey(winreg.HKEY_CLASSES_ROOT, r"*\shell\AEPGP_DeleteKeys")
+        winreg.SetValueEx(delkeys_key, "MUIVerb", 0, winreg.REG_SZ, "AEPGP: Delete Keys")
+        winreg.SetValueEx(delkeys_key, "Position", 0, winreg.REG_SZ, "Top")
+        delkeys_cmd_key = winreg.CreateKey(delkeys_key, "command")
+        winreg.SetValue(delkeys_cmd_key, "", winreg.REG_SZ, f'"{python_exe}" "{delete_keys_handler}"')
+        winreg.CloseKey(delkeys_cmd_key)
+        winreg.CloseKey(delkeys_key)
+        print("  ✓ Added 'AEPGP: Delete Keys'")
 
-                # Set the command to execute
-                command = f'"{python_exe}" "{decrypt_handler}" "%1"'
-                winreg.SetValue(cmd_key, "", winreg.REG_SZ, command)
+        # 5. AEPGP: Change PIN
+        changepin_key = winreg.CreateKey(winreg.HKEY_CLASSES_ROOT, r"*\shell\AEPGP_ChangePIN")
+        winreg.SetValueEx(changepin_key, "MUIVerb", 0, winreg.REG_SZ, "AEPGP: Change PIN")
+        winreg.SetValueEx(changepin_key, "Position", 0, winreg.REG_SZ, "Top")
+        changepin_cmd_key = winreg.CreateKey(changepin_key, "command")
+        winreg.SetValue(changepin_cmd_key, "", winreg.REG_SZ, f'"{python_exe}" "{change_pin_handler}"')
+        winreg.CloseKey(changepin_cmd_key)
+        winreg.CloseKey(changepin_key)
+        print("  ✓ Added 'AEPGP: Change PIN'")
 
-                winreg.CloseKey(cmd_key)
-                winreg.CloseKey(key)
+        # 6. AEPGP: Import PFX (only for .pfx and .p12 files)
+        # Register for .pfx files
+        pfx_importkey = winreg.CreateKey(winreg.HKEY_CLASSES_ROOT, r".pfx\shell\AEPGP_ImportPFX")
+        winreg.SetValueEx(pfx_importkey, "MUIVerb", 0, winreg.REG_SZ, "AEPGP: Import PFX to Card")
+        pfx_cmd_key = winreg.CreateKey(pfx_importkey, "command")
+        winreg.SetValue(pfx_cmd_key, "", winreg.REG_SZ, f'"{python_exe}" "{import_pfx_handler}" "%1"')
+        winreg.CloseKey(pfx_cmd_key)
+        winreg.CloseKey(pfx_importkey)
 
-                print(f"✓ Installed 'Decrypt with AEPGP' for {ext} files")
-                success_count += 1
+        # Register for .p12 files
+        p12_importkey = winreg.CreateKey(winreg.HKEY_CLASSES_ROOT, r".p12\shell\AEPGP_ImportPFX")
+        winreg.SetValueEx(p12_importkey, "MUIVerb", 0, winreg.REG_SZ, "AEPGP: Import PFX to Card")
+        p12_cmd_key = winreg.CreateKey(p12_importkey, "command")
+        winreg.SetValue(p12_cmd_key, "", winreg.REG_SZ, f'"{python_exe}" "{import_pfx_handler}" "%1"')
+        winreg.CloseKey(p12_cmd_key)
+        winreg.CloseKey(p12_importkey)
+        print("  ✓ Added 'AEPGP: Import PFX' for .pfx and .p12 files")
 
-            except Exception as e:
-                print(f"✗ Failed to install decrypt menu for {ext}: {e}")
-
-        return success_count > 0
-
-    except Exception as e:
-        print(f"✗ Failed to install decrypt menu: {e}")
-        return False
-
-
-def verify_installation():
-    """Verify that the context menu entries were installed correctly"""
-    try:
-        # Check encrypt menu
-        key = winreg.OpenKey(winreg.HKEY_CLASSES_ROOT, r"*\shell\AEPGP.Encrypt\command")
-        value, _ = winreg.QueryValue(key, "")
-        winreg.CloseKey(key)
-        print(f"\nEncrypt menu command: {value}")
-
-        # Check decrypt menu for .gpg
-        key = winreg.OpenKey(winreg.HKEY_CLASSES_ROOT, r".gpg\shell\AEPGP.Decrypt\command")
-        value, _ = winreg.QueryValue(key, "")
-        winreg.CloseKey(key)
-        print(f"Decrypt menu command: {value}")
-
+        print("✓ Installed AEPGP cascading menu for all files")
         return True
+
     except Exception as e:
-        print(f"\nWarning: Could not verify installation: {e}")
+        print(f"✗ Failed to install cascading menu: {e}")
+        import traceback
+        traceback.print_exc()
         return False
+
+
+def install_cascading_menu_for_desktop(handlers):
+    """
+    Install cascading submenu for Desktop background.
+
+    Creates structure:
+    Right-click Desktop → AEPGP →
+        ├── Generate Keys in Card
+        ├── Delete Keys from Card
+        └── Change Card PIN
+    """
+    _, _, generate_keys_handler, delete_keys_handler, _, change_pin_handler = handlers
+
+    try:
+        python_exe = sys.executable.replace("python.exe", "pythonw.exe")
+        if not os.path.exists(python_exe):
+            python_exe = sys.executable
+
+        # Create main AEPGP submenu for desktop background
+        main_key_path = r"Directory\Background\shell\AEPGP"
+        main_key = winreg.CreateKey(winreg.HKEY_CLASSES_ROOT, main_key_path)
+
+        # Set submenu text and make it a cascading menu
+        winreg.SetValueEx(main_key, "MUIVerb", 0, winreg.REG_SZ, "AEPGP")
+        # Empty SubCommands tells Windows to use shell subkeys
+        winreg.SetValueEx(main_key, "SubCommands", 0, winreg.REG_SZ, "")
+
+        # Create shell subkey for submenu items
+        shell_key = winreg.CreateKey(main_key, "shell")
+
+        # 1. Generate Keys in Card
+        genkeys_key = winreg.CreateKey(shell_key, "generatekeys")
+        winreg.SetValueEx(genkeys_key, "", 0, winreg.REG_SZ, "Generate Keys in Card")
+        winreg.SetValueEx(genkeys_key, "MUIVerb", 0, winreg.REG_SZ, "Generate Keys in Card")
+        genkeys_cmd_key = winreg.CreateKey(genkeys_key, "command")
+        winreg.SetValue(genkeys_cmd_key, "", winreg.REG_SZ, f'"{python_exe}" "{generate_keys_handler}"')
+        winreg.CloseKey(genkeys_cmd_key)
+        winreg.CloseKey(genkeys_key)
+        print("  ✓ Added 'Generate Keys in Card' to desktop menu")
+
+        # 2. Delete Keys from Card
+        delkeys_key = winreg.CreateKey(shell_key, "deletekeys")
+        winreg.SetValueEx(delkeys_key, "", 0, winreg.REG_SZ, "Delete Keys from Card")
+        winreg.SetValueEx(delkeys_key, "MUIVerb", 0, winreg.REG_SZ, "Delete Keys from Card")
+        delkeys_cmd_key = winreg.CreateKey(delkeys_key, "command")
+        winreg.SetValue(delkeys_cmd_key, "", winreg.REG_SZ, f'"{python_exe}" "{delete_keys_handler}"')
+        winreg.CloseKey(delkeys_cmd_key)
+        winreg.CloseKey(delkeys_key)
+        print("  ✓ Added 'Delete Keys from Card' to desktop menu")
+
+        # 3. Change Card PIN
+        changepin_key = winreg.CreateKey(shell_key, "changepin")
+        winreg.SetValueEx(changepin_key, "", 0, winreg.REG_SZ, "Change Card PIN")
+        winreg.SetValueEx(changepin_key, "MUIVerb", 0, winreg.REG_SZ, "Change Card PIN")
+        changepin_cmd_key = winreg.CreateKey(changepin_key, "command")
+        winreg.SetValue(changepin_cmd_key, "", winreg.REG_SZ, f'"{python_exe}" "{change_pin_handler}"')
+        winreg.CloseKey(changepin_cmd_key)
+        winreg.CloseKey(changepin_key)
+        print("  ✓ Added 'Change Card PIN' to desktop menu")
+
+        winreg.CloseKey(shell_key)
+        winreg.CloseKey(main_key)
+
+        print("✓ Installed AEPGP cascading menu for desktop background")
+        return True
+
+    except Exception as e:
+        print(f"✗ Failed to install desktop cascading menu: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
+def set_installed_version(version):
+    """Store the installed version in registry."""
+    try:
+        key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, VERSION_REG_KEY)
+        winreg.SetValueEx(key, VERSION_VALUE_NAME, 0, winreg.REG_SZ, version)
+        winreg.CloseKey(key)
+        print(f"✓ Registered version: {version}")
+    except Exception as e:
+        print(f"Warning: Could not store version: {e}")
 
 
 def main():
     """Main installation function"""
     print("=" * 70)
-    print("AEPGP Windows Context Menu Installer")
+    print("AEPGP Windows Context Menu Installer - Cascading Menu Version")
+    print(f"Version {CURRENT_VERSION}")
     print("=" * 70)
 
     # Check if running on Windows
@@ -199,9 +290,14 @@ def main():
 
     # Get handler script paths
     try:
-        encrypt_handler, decrypt_handler = get_script_paths()
+        handlers = get_script_paths()
+        encrypt_handler, decrypt_handler, generate_keys_handler, delete_keys_handler, import_pfx_handler, change_pin_handler = handlers
         print(f"\nFound encrypt handler: {encrypt_handler}")
         print(f"Found decrypt handler: {decrypt_handler}")
+        print(f"Found generate keys handler: {generate_keys_handler}")
+        print(f"Found delete keys handler: {delete_keys_handler}")
+        print(f"Found import PFX handler: {import_pfx_handler}")
+        print(f"Found change PIN handler: {change_pin_handler}")
     except FileNotFoundError as e:
         print(f"\nERROR: {e}")
         print("\nPress Enter to exit...")
@@ -210,30 +306,39 @@ def main():
 
     # Install menu items
     print("\n" + "=" * 70)
-    print("Installing context menu items...")
+    print("Installing AEPGP cascading context menu...")
     print("=" * 70)
 
-    encrypt_ok = install_encrypt_menu(encrypt_handler)
-    decrypt_ok = install_decrypt_menu(decrypt_handler)
+    all_files_ok = install_cascading_menu_for_all_files(handlers)
+    desktop_ok = install_cascading_menu_for_desktop(handlers)
 
-    # Verify installation
-    print("\n" + "=" * 70)
-    print("Verifying installation...")
-    print("=" * 70)
-    verify_installation()
+    # Store version information
+    if all_files_ok and desktop_ok:
+        set_installed_version(CURRENT_VERSION)
 
     # Summary
     print("\n" + "=" * 70)
-    if encrypt_ok and decrypt_ok:
+    if all_files_ok and desktop_ok:
         print("Installation completed successfully! ✓")
-        print("\nYou can now:")
-        print("  1. Right-click any file → 'Encrypt with AEPGP'")
-        print("  2. Right-click .gpg/.pgp/.asc files → 'Decrypt with AEPGP'")
-        print("\nNOTE: On Windows 11, these options appear in 'Show more options'")
+        print(f"\nInstalled version: {CURRENT_VERSION}")
+        print("\nHow to use:")
+        print("  1. Right-click any file → AEPGP → Choose action")
+        print("  2. Right-click Desktop → AEPGP → Generate Keys or Change PIN")
+        print("\nAvailable actions in AEPGP submenu:")
+        print("  • Encrypt File")
+        print("  • Decrypt File")
+        print("  • Generate Keys in Card")
+        print("  • Change Card PIN")
+        print("  • Import PFX to Card")
+        print("\nNOTE: On Windows 11, AEPGP appears in 'Show more options'")
         print("      (or you can use SHIFT+Right-click)")
     else:
         print("Installation completed with errors.")
         print("Some context menu items may not have been installed.")
+        if not all_files_ok:
+            print("  ✗ File context menu failed")
+        if not desktop_ok:
+            print("  ✗ Desktop context menu failed")
 
     print("\nPress Enter to exit...")
     input()
