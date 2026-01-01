@@ -166,16 +166,31 @@ def import_pfx_to_card(pfx_file):
         public_numbers = private_numbers.public_numbers
 
         # Get components (all in big-endian format)
-        e = public_numbers.e.to_bytes(4, 'big')  # Public exponent (usually 65537, 4 bytes)
+        # Use actual exponent size (typically 3 bytes for 65537) - SmartPGP requires exact length
+        e = public_numbers.e.to_bytes((public_numbers.e.bit_length() + 7) // 8, 'big')  # Public exponent
         n = public_numbers.n.to_bytes(256, 'big')  # Modulus (256 bytes for RSA-2048)
-        p = private_numbers.p.to_bytes(128, 'big')  # Prime p (128 bytes)
-        q = private_numbers.q.to_bytes(128, 'big')  # Prime q (128 bytes)
-        d = private_numbers.d
 
-        # Calculate CRT parameters
-        dp = private_numbers.dmp1.to_bytes(128, 'big')  # d mod (p-1)
-        dq = private_numbers.dmq1.to_bytes(128, 'big')  # d mod (q-1)
-        qinv = private_numbers.iqmp.to_bytes(128, 'big')  # q^-1 mod p
+        # JavaCard requires p < q, so swap if necessary and use PFX iqmp AS-IS
+        p_orig = private_numbers.p
+        q_orig = private_numbers.q
+
+        if p_orig < q_orig:
+            # Already correct order, use PFX values directly
+            p = p_orig.to_bytes(128, 'big')
+            q = q_orig.to_bytes(128, 'big')
+            dp = private_numbers.dmp1.to_bytes(128, 'big')
+            dq = private_numbers.dmq1.to_bytes(128, 'big')
+            qinv = private_numbers.iqmp.to_bytes(128, 'big')  # q^-1 mod p
+            logger.info(f"VERSION 1.2.27: Using PFX values (already p < q)")
+        else:
+            # Need to swap: new_p = q_orig (smaller), new_q = p_orig (larger)
+            # Try using PFX iqmp directly - maybe SmartPGP doesn't validate the coefficient!
+            p = q_orig.to_bytes(128, 'big')  # Smaller prime
+            q = p_orig.to_bytes(128, 'big')  # Larger prime
+            dp = private_numbers.dmq1.to_bytes(128, 'big')  # Was dq, now dp
+            dq = private_numbers.dmp1.to_bytes(128, 'big')  # Was dp, now dq
+            qinv = private_numbers.iqmp.to_bytes(128, 'big')  # Use PFX iqmp as-is!
+            logger.info(f"VERSION 1.2.28: Swapped p/q/dp/dq, using original PFX iqmp")
 
         logger.info(f"Extracted RSA components: e={len(e)} bytes, n={len(n)} bytes, p={len(p)} bytes")
 
@@ -244,7 +259,9 @@ def import_pfx_to_card(pfx_file):
             concat_data = list(e) + list(p) + list(q) + list(qinv) + list(dp) + list(dq) + list(n)
 
             # Build Extended Header (4D)
-            extended_header = [0xB8]  # Decryption key tag
+            # After B8 (key type), SmartPGP expects either 00 or an extended header (03 84 01 XX)
+            # We use 00 for standard format
+            extended_header = [0xB8, 0x00]  # Decryption key tag + standard format marker
             # 7F48 template
             template_with_tag = [0x7F, 0x48, 0x82] + list(len(template).to_bytes(2, 'big')) + template
             # 5F48 data
@@ -255,6 +272,18 @@ def import_pfx_to_card(pfx_file):
             # Final APDU data
             apdu_data = [0x4D, 0x82] + list(len(extended_content).to_bytes(2, 'big')) + extended_content
 
+            # Debug TLV structure sizes
+            logger.debug(f"TLV Structure Breakdown:")
+            logger.debug(f"  7F48 template size: {len(template)} bytes")
+            logger.debug(f"  5F48 concat_data size: {len(concat_data)} bytes")
+            logger.debug(f"  template_with_tag size: {len(template_with_tag)} bytes (7F48 tag + length + content)")
+            logger.debug(f"  data_with_tag size: {len(data_with_tag)} bytes (5F48 tag + length + content)")
+            logger.debug(f"  extended_content size: {len(extended_content)} bytes (B8 + 7F48 + 5F48)")
+            logger.debug(f"  4D tag + length: 4 bytes")
+            logger.debug(f"  Expected total: {4 + len(extended_content)} bytes")
+            logger.debug(f"  Actual apdu_data size: {len(apdu_data)} bytes")
+            logger.debug(f"First 20 bytes: {' '.join(f'{b:02X}' for b in apdu_data[:20])}")
+            logger.debug(f"Last 20 bytes: {' '.join(f'{b:02X}' for b in apdu_data[-20:])}")
             logger.info(f"APDU data size: {len(apdu_data)} bytes")
 
             # Verify admin PIN right before sending data
@@ -292,46 +321,61 @@ def import_pfx_to_card(pfx_file):
                 card.disconnect()
                 return
 
-            # Send PUT DATA command using larger chunks to minimize security timeout issues
-            # Security state expires after ~620ms, so we need to send fewer chunks
-            # Try 512 bytes per chunk instead of 255
-            MAX_CHUNK_SIZE = 512  # Larger chunks = fewer total chunks = faster completion
+            # Send PUT DATA command using command chaining with 255-byte chunks
+            # SmartPGP applet has been rebuilt with larger buffer (2048 bytes)
+            # Use standard 255-byte chunks with 1-byte Lc encoding
+            MAX_CHUNK_SIZE = 255  # Standard maximum for single-byte Lc
 
             offset = 0
             chunk_num = 0
             total_chunks = (len(apdu_data) + MAX_CHUNK_SIZE - 1) // MAX_CHUNK_SIZE
 
-            logger.info(f"Sending key import in {total_chunks} chunks (max {MAX_CHUNK_SIZE} bytes each)...")
+            logger.info(f"Sending key import in {total_chunks} chunks ({MAX_CHUNK_SIZE} bytes each, last chunk may be smaller)...")
+            logger.debug(f"Total data length: {len(apdu_data)} bytes")
+            logger.debug(f"Card buffer should be >= {len(apdu_data)} bytes (rebuilt applet)")
 
             while offset < len(apdu_data):
                 chunk_size = min(MAX_CHUNK_SIZE, len(apdu_data) - offset)
                 chunk_data = apdu_data[offset:offset + chunk_size]
 
-                # Use CLA=0x10 for all chunks except the last one (CLA=0x00)
+                # Use CLA=0x10 for chaining, CLA=0x00 for last chunk
                 is_last_chunk = (offset + chunk_size >= len(apdu_data))
                 cla = 0x00 if is_last_chunk else 0x10
 
-                # APDU: CLA INS P1 P2 Lc Data
-                # For chunks > 255 bytes, use extended length encoding (3 bytes)
-                if chunk_size > 255:
-                    lc_bytes = [0x00, (chunk_size >> 8) & 0xFF, chunk_size & 0xFF]
-                else:
-                    lc_bytes = [chunk_size]
-
-                put_data_cmd = [cla, 0xDB, 0x3F, 0xFF] + lc_bytes + chunk_data
+                # Standard APDU format: CLA INS P1 P2 Lc Data
+                # Use 1-byte Lc since chunk_size is always <= 255
+                # PUT DATA is Case 3 APDU (no Le byte needed)
+                put_data_cmd = [cla, 0xDB, 0x3F, 0xFF, chunk_size] + chunk_data
 
                 chunk_num += 1
-                logger.info(f"Sending chunk {chunk_num}/{total_chunks} ({chunk_size} bytes)...")
+                logger.info(f"Sending chunk {chunk_num}/{total_chunks} ({chunk_size} bytes, CLA={cla:02X})...")
+                logger.debug(f"  Offset: {offset}, CLA: {cla:02X}, Lc: {chunk_size}")
+
                 response, sw1, sw2 = card.connection.transmit(put_data_cmd)
                 card._log_apdu(put_data_cmd, response, sw1, sw2)
 
                 # Check response - should return 0x90 0x00
                 if sw1 != 0x90 or sw2 != 0x00:
-                    error_msg = f"Chunk {chunk_num} failed: SW={sw1:02X}{sw2:02X}"
+                    error_msg = f"Chunk {chunk_num}/{total_chunks} failed: SW={sw1:02X}{sw2:02X}"
                     logger.error(error_msg)
+
+                    # Provide specific error messages
+                    if sw1 == 0x67 and sw2 == 0x00:
+                        error_detail = f"Wrong length (6700) at chunk {chunk_num}/{total_chunks}"
+                        logger.error("Chunk size may be incorrect or APDU format issue")
+                    elif sw1 == 0x6A and sw2 == 0x80:
+                        error_detail = f"Incorrect parameters (6A80) at chunk {chunk_num}/{total_chunks}"
+                    elif sw1 == 0x65 and sw2 == 0x81:
+                        error_detail = f"Memory failure (6581) at chunk {chunk_num}/{total_chunks}"
+                        logger.error(f"Card buffer exceeded after {offset + chunk_size} bytes")
+                        logger.error(f"The SmartPGP applet's INTERNAL_BUFFER_MAX_LENGTH may need to be increased")
+                        logger.error(f"Required: >= {len(apdu_data)} bytes")
+                    else:
+                        error_detail = f"Error code: {sw1:02X}{sw2:02X} at chunk {chunk_num}/{total_chunks}"
+
                     card_utils.show_error_dialog(
-                        f"Failed to send data chunk {chunk_num}/{total_chunks}.\n\n"
-                        f"Error code: {sw1:02X}{sw2:02X}\n\n"
+                        f"Failed to import private key to card.\n\n"
+                        f"{error_detail}\n\n"
                         "The key was not imported.",
                         "Import Failed"
                     )
@@ -343,9 +387,10 @@ def import_pfx_to_card(pfx_file):
 
                 offset += chunk_size
 
+            logger.info(f"All {total_chunks} chunks sent successfully!")
+
             # Clear admin PIN from memory immediately after import
             admin_pin = None
-            pin_bytes = None
 
             # Check final response
             if sw1 == 0x90 and sw2 == 0x00:

@@ -14,7 +14,7 @@ import winreg
 import ctypes
 
 # Version tracking
-CURRENT_VERSION = "1.2.12"
+CURRENT_VERSION = "1.3.0"
 VERSION_REG_KEY = r"Software\AEPGP\ContextMenu"
 VERSION_VALUE_NAME = "Version"
 
@@ -58,7 +58,7 @@ def get_script_paths():
     decrypt_handler = os.path.join(handlers_dir, "decrypt_handler.py")
     generate_keys_handler = os.path.join(handlers_dir, "generate_keys_handler.py")
     delete_keys_handler = os.path.join(handlers_dir, "delete_keys_handler.py")
-    import_pfx_handler = os.path.join(handlers_dir, "import_pfx_handler.py")
+    # import_pfx_handler = os.path.join(handlers_dir, "import_pfx_handler.py")  # DISABLED - Feature incomplete
     change_pin_handler = os.path.join(handlers_dir, "change_pin_handler.py")
 
     # Verify handlers exist
@@ -70,12 +70,12 @@ def get_script_paths():
         raise FileNotFoundError(f"Generate keys handler not found: {generate_keys_handler}")
     if not os.path.exists(delete_keys_handler):
         raise FileNotFoundError(f"Delete keys handler not found: {delete_keys_handler}")
-    if not os.path.exists(import_pfx_handler):
-        raise FileNotFoundError(f"Import PFX handler not found: {import_pfx_handler}")
+    # if not os.path.exists(import_pfx_handler):  # DISABLED - Feature incomplete
+    #     raise FileNotFoundError(f"Import PFX handler not found: {import_pfx_handler}")
     if not os.path.exists(change_pin_handler):
         raise FileNotFoundError(f"Change PIN handler not found: {change_pin_handler}")
 
-    return encrypt_handler, decrypt_handler, generate_keys_handler, delete_keys_handler, import_pfx_handler, change_pin_handler
+    return encrypt_handler, decrypt_handler, generate_keys_handler, delete_keys_handler, change_pin_handler  # Removed import_pfx_handler
 
 
 def install_cascading_menu_for_all_files(handlers):
@@ -88,10 +88,9 @@ def install_cascading_menu_for_all_files(handlers):
         ├── AEPGP: Decrypt File
         ├── AEPGP: Generate Keys
         ├── AEPGP: Delete Keys
-        ├── AEPGP: Change PIN
-        └── AEPGP: Import PFX
+        └── AEPGP: Change PIN
     """
-    encrypt_handler, decrypt_handler, generate_keys_handler, delete_keys_handler, import_pfx_handler, change_pin_handler = handlers
+    encrypt_handler, decrypt_handler, generate_keys_handler, delete_keys_handler, change_pin_handler = handlers
 
     try:
         python_exe = sys.executable.replace("python.exe", "pythonw.exe")
@@ -148,23 +147,24 @@ def install_cascading_menu_for_all_files(handlers):
         winreg.CloseKey(changepin_key)
         print("  ✓ Added 'AEPGP: Change PIN'")
 
-        # 6. AEPGP: Import PFX (only for .pfx and .p12 files)
-        # Register for .pfx files
-        pfx_importkey = winreg.CreateKey(winreg.HKEY_CLASSES_ROOT, r".pfx\shell\AEPGP_ImportPFX")
-        winreg.SetValueEx(pfx_importkey, "MUIVerb", 0, winreg.REG_SZ, "AEPGP: Import PFX to Card")
-        pfx_cmd_key = winreg.CreateKey(pfx_importkey, "command")
-        winreg.SetValue(pfx_cmd_key, "", winreg.REG_SZ, f'"{python_exe}" "{import_pfx_handler}" "%1"')
-        winreg.CloseKey(pfx_cmd_key)
-        winreg.CloseKey(pfx_importkey)
-
-        # Register for .p12 files
-        p12_importkey = winreg.CreateKey(winreg.HKEY_CLASSES_ROOT, r".p12\shell\AEPGP_ImportPFX")
-        winreg.SetValueEx(p12_importkey, "MUIVerb", 0, winreg.REG_SZ, "AEPGP: Import PFX to Card")
-        p12_cmd_key = winreg.CreateKey(p12_importkey, "command")
-        winreg.SetValue(p12_cmd_key, "", winreg.REG_SZ, f'"{python_exe}" "{import_pfx_handler}" "%1"')
-        winreg.CloseKey(p12_cmd_key)
-        winreg.CloseKey(p12_importkey)
-        print("  ✓ Added 'AEPGP: Import PFX' for .pfx and .p12 files")
+        # DISABLED - PFX Import feature incomplete
+        # # 6. AEPGP: Import PFX (only for .pfx and .p12 files)
+        # # Register for .pfx files
+        # pfx_importkey = winreg.CreateKey(winreg.HKEY_CLASSES_ROOT, r".pfx\shell\AEPGP_ImportPFX")
+        # winreg.SetValueEx(pfx_importkey, "MUIVerb", 0, winreg.REG_SZ, "AEPGP: Import PFX to Card")
+        # pfx_cmd_key = winreg.CreateKey(pfx_importkey, "command")
+        # winreg.SetValue(pfx_cmd_key, "", winreg.REG_SZ, f'"{python_exe}" "{import_pfx_handler}" "%1"')
+        # winreg.CloseKey(pfx_cmd_key)
+        # winreg.CloseKey(pfx_importkey)
+        #
+        # # Register for .p12 files
+        # p12_importkey = winreg.CreateKey(winreg.HKEY_CLASSES_ROOT, r".p12\shell\AEPGP_ImportPFX")
+        # winreg.SetValueEx(p12_importkey, "MUIVerb", 0, winreg.REG_SZ, "AEPGP: Import PFX to Card")
+        # p12_cmd_key = winreg.CreateKey(p12_importkey, "command")
+        # winreg.SetValue(p12_cmd_key, "", winreg.REG_SZ, f'"{python_exe}" "{import_pfx_handler}" "%1"')
+        # winreg.CloseKey(p12_cmd_key)
+        # winreg.CloseKey(p12_importkey)
+        # print("  ✓ Added 'AEPGP: Import PFX' for .pfx and .p12 files")
 
         print("✓ Installed AEPGP cascading menu for all files")
         return True
@@ -259,6 +259,29 @@ def set_installed_version(version):
         print(f"Warning: Could not store version: {e}")
 
 
+def create_debug_log():
+    """Create a fresh debug log file"""
+    try:
+        temp_dir = os.environ.get('TEMP', os.environ.get('TMP', 'C:\\Temp'))
+        log_file = os.path.join(temp_dir, 'aepgp_debug.log')
+
+        # Remove old log if it exists
+        if os.path.exists(log_file):
+            os.remove(log_file)
+
+        # Create empty log file
+        with open(log_file, 'w', encoding='utf-8') as f:
+            f.write(f"AEPGP Debug Log\n")
+            f.write(f"Created during installation of version {CURRENT_VERSION}\n")
+            f.write(f"{'=' * 80}\n\n")
+
+        print(f"  ✓ Created debug log: {log_file}")
+        return True
+    except Exception as e:
+        print(f"  ! Warning: Could not create debug log: {e}")
+        return False
+
+
 def main():
     """Main installation function"""
     print("=" * 70)
@@ -291,12 +314,12 @@ def main():
     # Get handler script paths
     try:
         handlers = get_script_paths()
-        encrypt_handler, decrypt_handler, generate_keys_handler, delete_keys_handler, import_pfx_handler, change_pin_handler = handlers
+        encrypt_handler, decrypt_handler, generate_keys_handler, delete_keys_handler, change_pin_handler = handlers
         print(f"\nFound encrypt handler: {encrypt_handler}")
         print(f"Found decrypt handler: {decrypt_handler}")
         print(f"Found generate keys handler: {generate_keys_handler}")
         print(f"Found delete keys handler: {delete_keys_handler}")
-        print(f"Found import PFX handler: {import_pfx_handler}")
+        # print(f"Found import PFX handler: {import_pfx_handler}")  # DISABLED
         print(f"Found change PIN handler: {change_pin_handler}")
     except FileNotFoundError as e:
         print(f"\nERROR: {e}")
@@ -311,6 +334,9 @@ def main():
 
     all_files_ok = install_cascading_menu_for_all_files(handlers)
     desktop_ok = install_cascading_menu_for_desktop(handlers)
+
+    # Create fresh debug log file
+    create_debug_log()
 
     # Store version information
     if all_files_ok and desktop_ok:
@@ -329,7 +355,6 @@ def main():
         print("  • Decrypt File")
         print("  • Generate Keys in Card")
         print("  • Change Card PIN")
-        print("  • Import PFX to Card")
         print("\nNOTE: On Windows 11, AEPGP appears in 'Show more options'")
         print("      (or you can use SHIFT+Right-click)")
     else:

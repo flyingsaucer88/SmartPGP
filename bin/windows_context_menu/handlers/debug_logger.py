@@ -15,12 +15,13 @@ from pathlib import Path
 class DebugLogger:
     """Handles debug logging for AEPGP operations"""
 
-    def __init__(self, log_file=None):
+    def __init__(self, log_file=None, clear_on_init=False):
         """
         Initialize the debug logger.
 
         Args:
             log_file: Path to log file. If None, uses default location.
+            clear_on_init: If True, clear existing log file on initialization
         """
         if log_file is None:
             # Log to user's temp directory
@@ -29,6 +30,10 @@ class DebugLogger:
 
         self.log_file = log_file
         self.enabled = True
+
+        # Clear log file if requested
+        if clear_on_init:
+            self.clear_log()
 
     def log(self, level, message, exception=None):
         """
@@ -93,8 +98,20 @@ class DebugLogger:
         """Log a debug message"""
         self.log('DEBUG', message)
 
+    def clear_log(self):
+        """Clear the log file"""
+        try:
+            if os.path.exists(self.log_file):
+                os.remove(self.log_file)
+        except Exception as e:
+            print(f"Failed to clear log file: {e}")
+
     def log_operation_start(self, operation, file_path):
-        """Log the start of an operation"""
+        """
+        Log the start of an operation.
+        Clears the log file before starting to keep only current operation logs.
+        """
+        self.clear_log()
         self.info(f"Starting {operation} operation\nFile: {file_path}")
 
     def log_operation_end(self, operation, success, error_msg=None):

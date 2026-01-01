@@ -7,6 +7,7 @@ IMPORTANT: This script requires Administrator privileges.
 """
 
 import sys
+import os
 import winreg
 import ctypes
 
@@ -129,6 +130,24 @@ def remove_version_info():
         return False
 
 
+def delete_debug_log():
+    """Delete the debug log file"""
+    try:
+        temp_dir = os.environ.get('TEMP', os.environ.get('TMP', 'C:\\Temp'))
+        log_file = os.path.join(temp_dir, 'aepgp_debug.log')
+
+        if os.path.exists(log_file):
+            os.remove(log_file)
+            print(f"  ✓ Deleted debug log: {log_file}")
+            return True
+        else:
+            print(f"  - Debug log not found (already deleted or never created)")
+            return True
+    except Exception as e:
+        print(f"  ! Warning: Could not delete debug log: {e}")
+        return False
+
+
 def main():
     """Main uninstallation function"""
     print("=" * 70)
@@ -175,6 +194,7 @@ def main():
 
     menu_removed = uninstall_cascading_menus()
     version_removed = remove_version_info()
+    log_deleted = delete_debug_log()
 
     # Summary
     print("\n" + "=" * 70)

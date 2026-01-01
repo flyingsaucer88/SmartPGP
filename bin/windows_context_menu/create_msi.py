@@ -147,7 +147,7 @@ include_files = [
     ('handlers/decrypt_handler.py', 'handlers/decrypt_handler.py'),
     ('handlers/generate_keys_handler.py', 'handlers/generate_keys_handler.py'),
     ('handlers/delete_keys_handler.py', 'handlers/delete_keys_handler.py'),
-    ('handlers/import_pfx_handler.py', 'handlers/import_pfx_handler.py'),
+    # ('handlers/import_pfx_handler.py', 'handlers/import_pfx_handler.py'),  # DISABLED - Feature incomplete
     ('handlers/change_pin_handler.py', 'handlers/change_pin_handler.py'),
     ('handlers/rsa_crypto.py', 'handlers/rsa_crypto.py'),
     ('handlers/rsa_decrypt.py', 'handlers/rsa_decrypt.py'),
