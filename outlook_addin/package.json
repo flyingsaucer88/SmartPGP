@@ -1,0 +1,13 @@
+{
+  "name": "smartpgp-outlook-addin-host",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "dev-cert": "powershell -ExecutionPolicy Bypass -File scripts/new-dev-cert.ps1"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.18.2"
+  }
+}

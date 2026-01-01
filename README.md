@@ -125,6 +125,29 @@ The repository contains several directories:
 - `videos` contains sample videos demonstrating smartcard interactions
   with OpenKeychain and K9 mail on Android Nexus 5.
 
+# Outlook / OWA integration (new tooling)
+
+This repository now includes a complete scaffold to integrate SmartPGP with Outlook on the web and Outlook desktop via a localhost helper:
+
+- **Windows localhost helper** (`outlook_helper/windows/SmartPGP.OutlookHelper`): ASP.NET Core minimal API exposing `/encrypt` and `/decrypt`, using GPGME to delegate crypto to GnuPG (smartcard-backed keys). Configurable via `appsettings.json` or env vars (`SmartPgp__Port`, `SmartPgp__AllowedOrigin`, `SmartPgp__CertificatePath`, `SmartPgp__CertificatePassword`, `SmartPgp__SignerId`). Dev cert bootstrap script in `scripts/new-dev-cert.ps1`.
+- **Outlook add-in assets** (`outlook_addin/web` + `outlook_addin/manifest/manifest.xml`): Compose/Read commands and OnMessageSend handler that call the helper and set `smartpgp-encrypted: 1` header; task pane decrypts via helper.
+- **Add-in dev host** (`outlook_addin/server.js`): Node/Express HTTPS static server (default https://localhost:3000) with its own dev cert script (`outlook_addin/scripts/new-dev-cert.ps1`) for quick OWA sideloading.
+- **Docs**: `docs/outlook_web_helper.md` summarizes API contract, security expectations, and immediate tasks.
+- **Self-tests**:
+  - Helper round-trip: `outlook_helper/windows/SmartPGP.OutlookHelper/tests/selftest.ps1` (defaults to recipient `ambisecure@outlook.com`).
+  - Add-in host reachability: `outlook_addin/tests/selftest.js`.
+  - Aggregator: `tools/selftest.ps1` runs both.
+
+Quick start (helper):
+1. Install GnuPG and ensure your SmartPGP card works: `gpg --card-status`.
+2. In `outlook_helper/windows/SmartPGP.OutlookHelper`: `dotnet restore && dotnet run` (or configure a trusted PFX via `scripts/new-dev-cert.ps1`).
+3. Test: `powershell -File tests/selftest.ps1 -Recipient your@email`.
+
+Quick start (add-in dev host + sideload):
+1. `cd outlook_addin && npm install && npm run dev-cert && npm start` (serves https://localhost:3000).
+2. In Outlook on the web, upload custom app → `https://localhost:3000/manifest.xml`.
+3. Compose and send with SmartPGP button; helper must be reachable at `https://127.0.0.1:5555`.
+
 
 
 # Build and installation instructions
@@ -294,4 +317,3 @@ token.
 - Click on "SmartPGP trusted authorities", and then on "+" at the top left;
 
 - Set a name for this authority and select the file you uploaded.
-
