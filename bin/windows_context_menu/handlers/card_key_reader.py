@@ -115,8 +115,9 @@ def read_public_key_from_card(card, key_slot='encryption'):
 
         # Check for errors
         if sw1 == 0x6A and sw2 == 0x88:
-            # Referenced data not found - key doesn't exist
-            logger.error(f"Public key not found on card: SW={sw1:02X}{sw2:02X}")
+            # Referenced data not found - no key in this slot
+            logger.error(f"No key found in {key_slot} slot (SW=6A88)")
+            logger.error("Please generate keys first using 'Generate Keys in Card' option")
             return None
 
         if not response:

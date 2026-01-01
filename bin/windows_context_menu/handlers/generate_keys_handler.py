@@ -21,7 +21,7 @@ def generate_keys():
     """
     Generate RSA-2048 key pair on the AEPGP card.
 
-    Uses the smartpgp.highlevel module to generate keys.
+    Uses direct APDU commands to generate keys on the card.
     """
     logger.log_operation_start("Generate Keys", "AEPGP Card")
     logger.log_system_info()
@@ -44,69 +44,106 @@ def generate_keys():
 
         logger.info("Starting key generation on card...")
 
-        # Import smartpgp highlevel module
-        try:
-            import subprocess
+        # Connect to card
+        from card_utils import AEPGPCard
+        card = AEPGPCard()
 
-            # Add bin directory to Python path for smartpgp module
-            bin_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-            smartpgp_dir = os.path.join(bin_dir, 'smartpgp')
-
-            # Use smartpgp.highlevel to generate keys
-            # First, switch to RSA-2048 for decryption key
-            logger.info("Switching decryption key slot to RSA-2048...")
-            env = os.environ.copy()
-            env['PYTHONPATH'] = bin_dir + os.pathsep + env.get('PYTHONPATH', '')
-
-            result = subprocess.run(
-                [sys.executable, "-m", "smartpgp.highlevel", "--reader", "0", "switch-key", "dec", "rsa2048"],
-                capture_output=True,
-                text=True,
-                timeout=30,
-                env=env
+        if not card.connect():
+            error_msg = "Failed to connect to AEPGP card"
+            logger.error(error_msg)
+            card_utils.show_error_dialog(
+                "Could not connect to AEPGP card.\n\n"
+                "Please ensure:\n"
+                "1. The card is inserted\n"
+                "2. No other application is using the card",
+                "Connection Error"
             )
+            logger.log_operation_end("Generate Keys", False, error_msg)
+            return
 
-            if result.returncode != 0:
-                error_msg = f"Failed to switch key slot: {result.stderr}"
+        try:
+            logger.info("Connected to card, starting key generation...")
+
+            # Verify admin PIN (required for key generation)
+            logger.info("Verifying admin PIN...")
+            admin_pin = "12345678"  # Default admin PIN
+            pin_bytes = [ord(c) for c in admin_pin]
+            verify_apdu = [0x00, 0x20, 0x00, 0x83, len(pin_bytes)] + pin_bytes
+
+            response, sw1, sw2 = card.connection.transmit(verify_apdu)
+            card._log_apdu(verify_apdu, response, sw1, sw2)
+
+            if sw1 != 0x90 or sw2 != 0x00:
+                error_msg = f"Admin PIN verification failed: SW={sw1:02X}{sw2:02X}"
                 logger.error(error_msg)
                 card_utils.show_error_dialog(
-                    f"Failed to switch key slot:\n\n{result.stderr}",
-                    "Key Generation Error"
+                    f"Admin PIN verification failed.\n\n"
+                    f"Status: {sw1:02X}{sw2:02X}\n\n"
+                    f"Make sure you're using the correct admin PIN.\n"
+                    f"Default admin PIN: 12345678",
+                    "PIN Verification Error"
                 )
                 logger.log_operation_end("Generate Keys", False, error_msg)
+                card.disconnect()
                 return
 
-            logger.info("Key slot switched to RSA-2048")
+            logger.info("Admin PIN verified")
 
-            # Generate the key
-            logger.info("Generating RSA-2048 key pair on card...")
+            # Show progress dialog
             card_utils.show_info_dialog(
-                "Generating RSA-2048 key pair...\n\n"
+                "Generating RSA-2048 key pair on card...\n\n"
                 "This may take 30-60 seconds.\n"
-                "Please wait...",
+                "Please wait and do not remove the card...",
                 "Generating Keys"
             )
 
-            result = subprocess.run(
-                [sys.executable, "-m", "smartpgp.highlevel", "--reader", "0", "generate-key", "dec"],
-                capture_output=True,
-                text=True,
-                timeout=120,
-                env=env
-            )
+            # Generate key pair for decryption slot (0xB8)
+            logger.info("Generating RSA-2048 key pair (this may take up to 60 seconds)...")
 
-            if result.returncode != 0:
-                error_msg = f"Key generation failed: {result.stderr}"
+            # APDU: 00 47 80 00 02 B8 00 00
+            # CLA=00, INS=47, P1=80 (generate), P2=00
+            # Data: B8 00 (decryption slot + empty template)
+            # Le=00 (expect response)
+            gen_apdu = [0x00, 0x47, 0x80, 0x00, 0x02, 0xB8, 0x00, 0x00]
+
+            response, sw1, sw2 = card.connection.transmit(gen_apdu)
+            card._log_apdu(gen_apdu, response, sw1, sw2)
+
+            # Handle GET RESPONSE if needed (SW=61XX means more data available)
+            if sw1 == 0x61:
+                logger.info(f"Fetching remaining {sw2} bytes with GET RESPONSE...")
+                get_response = [0x00, 0xC0, 0x00, 0x00, sw2]
+                response2, sw1, sw2 = card.connection.transmit(get_response)
+                card._log_apdu(get_response, response2, sw1, sw2)
+                response = response + response2
+
+            # Check if generation was successful
+            if sw1 != 0x90 or sw2 != 0x00:
+                error_msg = f"Key generation failed: SW={sw1:02X}{sw2:02X}"
                 logger.error(error_msg)
                 card_utils.show_error_dialog(
-                    f"Key generation failed:\n\n{result.stderr}",
+                    f"Key generation failed.\n\n"
+                    f"Status: {sw1:02X}{sw2:02X}\n\n"
+                    f"Please try again. If the problem persists,\n"
+                    f"try resetting the card.",
                     "Key Generation Error"
                 )
                 logger.log_operation_end("Generate Keys", False, error_msg)
+                card.disconnect()
                 return
 
-            logger.info("Key generation successful!")
-            logger.info(f"Output: {result.stdout}")
+            logger.info(f"Key generation successful! Generated {len(response)} bytes of public key data")
+
+            # Verify the key can be read
+            logger.info("Verifying generated key...")
+            read_apdu = [0x00, 0x47, 0x81, 0x00, 0x02, 0xB8, 0x00, 0x00]
+            response, sw1, sw2 = card.connection.transmit(read_apdu)
+            card._log_apdu(read_apdu, response, sw1, sw2)
+
+            if sw1 == 0x90 or sw1 == 0x61:
+                logger.info("Key verification successful!")
+            else:
+                logger.warning(f"Key verification returned SW={sw1:02X}{sw2:02X}, but generation reported success")
 
             # Success!
             card_utils.show_info_dialog(
@@ -114,32 +151,14 @@ def generate_keys():
                 "Slot: Decryption/Encryption\n"
                 "Algorithm: RSA-2048\n\n"
                 "The key pair is now stored securely on your AEPGP card.\n"
-                "The private key will never leave the card.",
+                "The private key will never leave the card.\n\n"
+                "You can now use this key for encryption and decryption.",
                 "Key Generation Successful"
             )
             logger.log_operation_end("Generate Keys", True)
 
-        except subprocess.TimeoutExpired:
-            error_msg = "Key generation timed out (exceeded 2 minutes)"
-            logger.error(error_msg)
-            card_utils.show_error_dialog(
-                "Key generation timed out.\n\n"
-                "Please try again. If the problem persists,\n"
-                "try resetting the card.",
-                "Key Generation Timeout"
-            )
-            logger.log_operation_end("Generate Keys", False, error_msg)
-
-        except ImportError:
-            error_msg = "smartpgp module not found"
-            logger.error(error_msg)
-            card_utils.show_error_dialog(
-                "The smartpgp module is not installed.\n\n"
-                "Please install it with:\n"
-                "pip install smartpgp",
-                "Module Not Found"
-            )
-            logger.log_operation_end("Generate Keys", False, error_msg)
+        finally:
+            card.disconnect()
 
     except Exception as e:
         logger.error("Exception during key generation", e)

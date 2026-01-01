@@ -14,7 +14,7 @@ import winreg
 import ctypes
 
 # Version tracking
-CURRENT_VERSION = "1.3.0"
+CURRENT_VERSION = "1.3.1"
 VERSION_REG_KEY = r"Software\AEPGP\ContextMenu"
 VERSION_VALUE_NAME = "Version"
 
@@ -186,7 +186,7 @@ def install_cascading_menu_for_desktop(handlers):
         ├── Delete Keys from Card
         └── Change Card PIN
     """
-    _, _, generate_keys_handler, delete_keys_handler, _, change_pin_handler = handlers
+    _, _, generate_keys_handler, delete_keys_handler, change_pin_handler = handlers
 
     try:
         python_exe = sys.executable.replace("python.exe", "pythonw.exe")
