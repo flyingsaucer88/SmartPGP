@@ -62,16 +62,31 @@ async function helperDecrypt(body) {
   return json.plaintext;
 }
 
-function getBodyText(item) {
-  return new Promise((resolve, reject) => {
-    item.body.getAsync("text", result => {
-      if (result.status === Office.AsyncResultStatus.Succeeded) {
-        resolve(result.value || "");
-      } else {
-        reject(result.error);
-      }
+async function getBodyText(item) {
+  // Try to get HTML body first (preserves formatting)
+  try {
+    const htmlBody = await new Promise((resolve, reject) => {
+      item.body.getAsync(Office.CoercionType.Html, result => {
+        if (result.status === Office.AsyncResultStatus.Succeeded) {
+          resolve(result.value || "");
+        } else {
+          reject(result.error);
+        }
+      });
     });
-  });
+    return htmlBody;
+  } catch (htmlError) {
+    // Fallback to text if HTML fails
+    return new Promise((resolve, reject) => {
+      item.body.getAsync(Office.CoercionType.Text, result => {
+        if (result.status === Office.AsyncResultStatus.Succeeded) {
+          resolve(result.value || "");
+        } else {
+          reject(result.error);
+        }
+      });
+    });
+  }
 }
 
 function setBodyText(item, text) {
@@ -86,17 +101,48 @@ function setBodyText(item, text) {
   });
 }
 
-function getRecipients(item) {
-  return new Promise((resolve, reject) => {
+async function getRecipients(item) {
+  const allRecipients = [];
+
+  // Get TO recipients
+  const toRecipients = await new Promise((resolve, reject) => {
     item.to.getAsync(result => {
       if (result.status === Office.AsyncResultStatus.Succeeded) {
-        const emails = (result.value || []).map(r => r.emailAddress);
-        resolve(emails);
+        resolve((result.value || []).map(r => r.emailAddress));
       } else {
         reject(result.error);
       }
     });
   });
+  allRecipients.push(...toRecipients);
+
+  // Get CC recipients
+  const ccRecipients = await new Promise((resolve) => {
+    item.cc.getAsync(result => {
+      if (result.status === Office.AsyncResultStatus.Succeeded) {
+        resolve((result.value || []).map(r => r.emailAddress));
+      } else {
+        // CC might not be available in all contexts, ignore errors
+        resolve([]);
+      }
+    });
+  });
+  allRecipients.push(...ccRecipients);
+
+  // Get BCC recipients
+  const bccRecipients = await new Promise((resolve) => {
+    item.bcc.getAsync(result => {
+      if (result.status === Office.AsyncResultStatus.Succeeded) {
+        resolve((result.value || []).map(r => r.emailAddress));
+      } else {
+        // BCC might not be available in all contexts, ignore errors
+        resolve([]);
+      }
+    });
+  });
+  allRecipients.push(...bccRecipients);
+
+  return allRecipients;
 }
 
 function setHeader(item, name, value) {
@@ -113,26 +159,36 @@ function setHeader(item, name, value) {
 
 // Task pane helper to render decrypted text
 async function decryptCurrentMessage() {
-  const item = Office.context.mailbox.item;
+  try {
+    const item = Office.context.mailbox.item;
 
-  const headers = await new Promise((resolve, reject) => {
-    item.internetHeaders.getAsync(["smartpgp-encrypted"], result => {
-      if (result.status === Office.AsyncResultStatus.Succeeded) {
-        resolve(result.value || {});
-      } else {
-        reject(result.error);
-      }
+    const headers = await new Promise((resolve, reject) => {
+      item.internetHeaders.getAsync(["smartpgp-encrypted"], result => {
+        if (result.status === Office.AsyncResultStatus.Succeeded) {
+          resolve(result.value || {});
+        } else {
+          reject(result.error);
+        }
+      });
     });
-  });
 
-  if (headers["smartpgp-encrypted"] !== "1") {
-    updatePane("This message is not SmartPGP encrypted.");
-    return;
+    if (headers["smartpgp-encrypted"] !== "1") {
+      updatePane("This message is not SmartPGP encrypted.");
+      return;
+    }
+
+    const cipherBody = await getBodyText(item);
+    const plaintext = await helperDecrypt(cipherBody);
+    updatePane(plaintext);
+  } catch (err) {
+    // Handle helper unavailability gracefully
+    const errorMsg = err && err.message ? err.message : "Decryption failed";
+    if (errorMsg.includes("fetch") || errorMsg.includes("Failed to fetch")) {
+      updatePane("⚠️ SmartPGP helper is not available.\n\nPlease ensure the SmartPGP helper service is running at https://127.0.0.1:5555");
+    } else {
+      updatePane(`⚠️ Decryption error:\n\n${errorMsg}`);
+    }
   }
-
-  const cipherBody = await getBodyText(item);
-  const plaintext = await helperDecrypt(cipherBody);
-  updatePane(plaintext);
 }
 
 function updatePane(text) {

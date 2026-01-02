@@ -9,9 +9,9 @@
   <DefaultLocale>en-US</DefaultLocale>
   <DisplayName DefaultValue="SmartPGP Mail" />
   <Description DefaultValue="Encrypt and decrypt mail with SmartPGP via localhost helper" />
-  <IconUrl DefaultValue="https://localhost/assets/icon-32.png" />
-  <HighResolutionIconUrl DefaultValue="https://localhost/assets/icon-64.png" />
-  <SupportUrl DefaultValue="https://localhost/support" />
+  <IconUrl DefaultValue="https://localhost:3000/assets/icon-32.png" />
+  <HighResolutionIconUrl DefaultValue="https://localhost:3000/assets/icon-64.png" />
+  <SupportUrl DefaultValue="https://localhost:3000/support" />
   <Hosts>
     <Host Name="Mailbox" />
   </Hosts>
@@ -23,12 +23,12 @@
   <FormSettings>
     <Form xsi:type="ItemRead">
       <DesktopSettings>
-        <SourceLocation DefaultValue="https://localhost/taskpane.html" />
+        <SourceLocation DefaultValue="https://localhost:3000/taskpane.html" />
       </DesktopSettings>
     </Form>
     <Form xsi:type="ItemEdit">
       <DesktopSettings>
-        <SourceLocation DefaultValue="https://localhost/taskpane.html" />
+        <SourceLocation DefaultValue="https://localhost:3000/taskpane.html" />
       </DesktopSettings>
     </Form>
   </FormSettings>
@@ -51,7 +51,7 @@
                                    id="EncryptSendButton"
                                    label="Encrypt &amp; Send"
                                    onAction="encryptAndSend"
-                                   icon="https://localhost/assets/icon-16.png" />
+                                   icon="https://localhost:3000/assets/icon-16.png" />
               </mailappor:Group>
             </mailappor:OfficeTab>
           </mailappor:ExtensionPoint>
@@ -64,7 +64,7 @@
                                    id="DecryptButton"
                                    label="Decrypt"
                                    onAction="showDecryptPane"
-                                   icon="https://localhost/assets/icon-16.png" />
+                                   icon="https://localhost:3000/assets/icon-16.png" />
               </mailappor:Group>
             </mailappor:OfficeTab>
           </mailappor:ExtensionPoint>
@@ -83,13 +83,13 @@
 
     <mailappor:Resources>
       <mailappor:Images>
-        <mailappor:Image id="icon16" DefaultValue="https://localhost/assets/icon-16.png" />
-        <mailappor:Image id="icon32" DefaultValue="https://localhost/assets/icon-32.png" />
-        <mailappor:Image id="icon80" DefaultValue="https://localhost/assets/icon-80.png" />
+        <mailappor:Image id="icon16" DefaultValue="https://localhost:3000/assets/icon-16.png" />
+        <mailappor:Image id="icon32" DefaultValue="https://localhost:3000/assets/icon-32.png" />
+        <mailappor:Image id="icon80" DefaultValue="https://localhost:3000/assets/icon-80.png" />
       </mailappor:Images>
       <mailappor:Urls>
-        <mailappor:Url id="functionFile" DefaultValue="https://localhost/functions.html" />
-        <mailappor:Url id="taskPaneUrl" DefaultValue="https://localhost/taskpane.html" />
+        <mailappor:Url id="functionFile" DefaultValue="https://localhost:3000/functions.html" />
+        <mailappor:Url id="taskPaneUrl" DefaultValue="https://localhost:3000/taskpane.html" />
       </mailappor:Urls>
     </mailappor:Resources>
     <mailappor:ExtensionPoint xsi:type="mailappor:LaunchEvent">

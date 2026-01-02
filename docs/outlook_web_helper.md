@@ -21,11 +21,20 @@ These notes anchor the first implementation steps for the Outlook add-in flow de
   2) `gpg --decrypt <sample>` and `gpg --sign` using the card
   3) `gpg --list-secret-keys` shows the card-backed keys
 
-## Immediate tasks
-1) Scaffold the Windows helper (see `outlook_helper/windows`) with a minimal API surface and placeholder GPGME calls.
-2) Add CORS + HTTPS (localhost cert) and lock listening to loopback.
-3) Provide a small interop test: helper encrypts to your recipient key; `gpg --decrypt` succeeds; reverse flow also works.
-4) Author a short “developer setup” doc (GnuPG install, smartcard driver check, cert trust) once the helper builds.
+## Implementation Status
 
-## Out of scope for now
-- macOS helper, MSI/installer packaging, and Outlook add-in manifest/assets; those will follow once the Windows helper is proven.
+### Completed ✅
+1) ✅ Scaffolded Windows helper (`outlook_helper/windows`) with full GPGME integration (not placeholders)
+2) ✅ CORS + HTTPS (localhost cert) configured with loopback binding
+3) ✅ Interop test suite implemented (`outlook_helper/windows/SmartPGP.OutlookHelper/tests/selftest.ps1`)
+4) ✅ Add-in manifest/assets created with OnMessageSend handler
+5) ✅ Add-in extracts TO, CC, and BCC recipients (per gist requirements)
+6) ✅ Add-in supports both HTML and text body formats
+7) ✅ Graceful error handling for helper unavailability
+
+### Remaining Tasks
+- Author comprehensive "developer setup" doc (GnuPG install, smartcard driver check, cert trust)
+- Create icon assets for add-in manifest (16x16, 32x32, 64x64, 80x80 PNGs)
+- Test end-to-end flow with actual SmartPGP card
+- macOS helper implementation
+- MSI/installer packaging for production deployment

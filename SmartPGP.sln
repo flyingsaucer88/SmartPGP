@@ -1,0 +1,32 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.5.2.0
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "outlook_helper", "outlook_helper", "{914334AC-C4AC-E12C-39EE-42AC4654D4C9}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "windows", "windows", "{69A03A27-6F09-6560-122A-F00FB17DC677}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SmartPGP.OutlookHelper", "outlook_helper\windows\SmartPGP.OutlookHelper\SmartPGP.OutlookHelper.csproj", "{80354049-B78A-EF3B-2FF1-3B1366C324F8}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{80354049-B78A-EF3B-2FF1-3B1366C324F8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{80354049-B78A-EF3B-2FF1-3B1366C324F8}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{80354049-B78A-EF3B-2FF1-3B1366C324F8}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{80354049-B78A-EF3B-2FF1-3B1366C324F8}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{69A03A27-6F09-6560-122A-F00FB17DC677} = {914334AC-C4AC-E12C-39EE-42AC4654D4C9}
+		{80354049-B78A-EF3B-2FF1-3B1366C324F8} = {69A03A27-6F09-6560-122A-F00FB17DC677}
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {F2CE7ABC-8DF4-43C7-B172-E94518CC2761}
+	EndGlobalSection
+EndGlobal

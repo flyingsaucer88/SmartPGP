@@ -27,5 +27,6 @@ npm start
 3) Compose an email and use the SmartPGP button; send handler calls the helper at `https://127.0.0.1:5555`.
 
 ## Notes
-- The manifest references `https://localhost` URLs; ensure the host matches or update `manifest/manifest.xml`.
+- The manifest references `https://localhost:3000` URLs; ensure the host matches or update `manifest/manifest.xml`.
 - Helper must be running (port 5555 by default) and trusted. Update `functions.js` if you change ports.
+- Icon files are required in `web/assets/` (icon-16.png, icon-32.png, icon-64.png, icon-80.png). Create placeholder icons or branded SmartPGP icons for production use.
