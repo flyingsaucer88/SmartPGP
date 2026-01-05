@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Http.Json;
 using Gpgme;
 using System.Text;
+using SmartPGP.OutlookHelper;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -28,6 +29,7 @@ builder.Services.AddCors(options =>
 });
 
 builder.Services.AddSingleton<PgpService>();
+builder.Services.AddSingleton<CardService>();
 
 builder.WebHost.ConfigureKestrel(options =>
 {
@@ -88,10 +90,94 @@ app.MapPost("/decrypt", async Task<IResult> (DecryptRequest? req, PgpService pgp
 
 app.MapGet("/healthz", () => Results.Ok("ok"));
 
+// POST /generate-keypair - Generate new keypair on card
+app.MapPost("/generate-keypair", async (GenerateKeypairRequest? req, CardService cardService) =>
+{
+    try
+    {
+        var keySize = req?.KeySize ?? 2048;
+        var adminPin = req?.AdminPin ?? "12345678";
+
+        var result = await cardService.GenerateKeypair(keySize, adminPin);
+        return Results.Json(result);
+    }
+    catch (CardException ex)
+    {
+        return Results.Problem(ex.Message, statusCode: 500);
+    }
+    catch (Exception ex)
+    {
+        return Results.Problem($"Unexpected error: {ex.Message}", statusCode: 500);
+    }
+});
+
+// POST /change-pin - Change card PIN
+app.MapPost("/change-pin", async (ChangePinRequest? req, CardService cardService) =>
+{
+    if (req is null || string.IsNullOrWhiteSpace(req.CurrentPin) || string.IsNullOrWhiteSpace(req.NewPin))
+    {
+        return Results.BadRequest("Current PIN and new PIN are required");
+    }
+
+    try
+    {
+        var result = await cardService.ChangePin(req.CurrentPin, req.NewPin);
+        return Results.Json(result);
+    }
+    catch (CardException ex)
+    {
+        return Results.Problem(ex.Message, statusCode: 500);
+    }
+    catch (Exception ex)
+    {
+        return Results.Problem($"Unexpected error: {ex.Message}", statusCode: 500);
+    }
+});
+
+// POST /delete-keypair - Delete all keys (factory reset)
+app.MapPost("/delete-keypair", async (DeleteKeypairRequest? req, CardService cardService) =>
+{
+    try
+    {
+        var adminPin = req?.AdminPin ?? "12345678";
+        var result = await cardService.DeleteKeypair(adminPin);
+        return Results.Json(result);
+    }
+    catch (CardException ex)
+    {
+        return Results.Problem(ex.Message, statusCode: 500);
+    }
+    catch (Exception ex)
+    {
+        return Results.Problem($"Unexpected error: {ex.Message}", statusCode: 500);
+    }
+});
+
+// GET /card-status - Get card status information
+app.MapGet("/card-status", async (CardService cardService) =>
+{
+    try
+    {
+        var status = await cardService.GetCardStatus();
+        return Results.Json(status);
+    }
+    catch (CardException ex)
+    {
+        return Results.Problem(ex.Message, statusCode: 500);
+    }
+    catch (Exception ex)
+    {
+        return Results.Problem($"Unexpected error: {ex.Message}", statusCode: 500);
+    }
+});
+
 app.Run();
 
 public record EncryptRequest(string Body, string[]? Recipients);
 public record DecryptRequest(string Body);
+public record GenerateKeypairRequest(int? KeySize, string? AdminPin);
+public record ChangePinRequest(string CurrentPin, string NewPin);
+public record DeleteKeypairRequest(string? AdminPin);
 
 public record OperationResult<T>(bool IsSuccess, T? Value, string? ErrorMessage)
 {

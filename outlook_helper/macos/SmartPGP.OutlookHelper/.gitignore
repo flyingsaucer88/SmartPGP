@@ -1,0 +1,30 @@
+# Swift/Xcode
+.DS_Store
+.build/
+*.xcodeproj
+*.xcworkspace
+xcuserdata/
+DerivedData/
+
+# Swift Package Manager
+Packages/
+Package.resolved
+.swiftpm/
+
+# Environment
+.env
+
+# Certificates
+certs/*.p12
+certs/*.pem
+certs/*.key
+certs/*.crt
+!certs/README.md
+
+# Logs
+*.log
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
