@@ -2,3 +2,19 @@ ant-javacard.jar
 build
 SmartPGPApplet.cap
 **/__pycache__/
+
+# .NET build artifacts
+**/obj/
+**/bin/Debug/
+**/bin/Release/
+
+# Node.js
+**/node_modules/
+**/package-lock.json
+
+# Certificates (dev only, not for production)
+**/certs/*.pfx
+**/certs/*.pem
+**/certs/*.key
+**/certs/*.crt
+!**/certs/README.md
