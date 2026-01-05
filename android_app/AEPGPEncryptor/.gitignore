@@ -1,0 +1,29 @@
+# Android Studio / Gradle
+.gradle/
+.idea/
+*.iml
+local.properties
+.DS_Store
+build/
+captures/
+.externalNativeBuild
+.cxx
+
+# Android
+*.apk
+*.aab
+*.ap_
+*.dex
+*.class
+
+# Keystore
+*.jks
+*.keystore
+
+# Logs
+*.log
+
+# Generated files
+bin/
+gen/
+out/
