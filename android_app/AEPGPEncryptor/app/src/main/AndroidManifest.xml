@@ -12,10 +12,15 @@
         android:maxSdkVersion="28"
         tools:ignore="ScopedStorage" />
 
-    <!-- NFC feature required -->
+    <!-- NFC feature (optional, app also works via USB) -->
     <uses-feature
         android:name="android.hardware.nfc"
-        android:required="true" />
+        android:required="false" />
+
+    <!-- USB host support (optional) -->
+    <uses-feature
+        android:name="android.hardware.usb.host"
+        android:required="false" />
 
     <application
         android:allowBackup="true"
@@ -47,6 +52,14 @@
             <meta-data
                 android:name="android.nfc.action.TECH_DISCOVERED"
                 android:resource="@xml/nfc_tech_filter" />
+
+            <!-- USB attach intents for CCID readers -->
+            <intent-filter>
+                <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" />
+            </intent-filter>
+            <meta-data
+                android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"
+                android:resource="@xml/usb_device_filter" />
         </activity>
 
         <!-- Encrypt Activity -->

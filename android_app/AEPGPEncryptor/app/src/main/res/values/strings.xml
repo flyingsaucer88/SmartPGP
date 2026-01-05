@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">AEPGP Encryptor</string>
+    <string name="encrypt_file">Encrypt File</string>
+    <string name="decrypt_file">Decrypt File</string>
+    <string name="card_management">Card Management</string>
+    <string name="main_instruction">Tap your AEPGP card via NFC or plug in a CCID reader over USB OTG to begin.</string>
+    <string name="status_ready">Ready for NFC tap or USB card.</string>
+    <string name="status_detected">Card detected. Attempting SELECT...</string>
+    <string name="status_selected">Card applet selected successfully.</string>
+    <string name="status_failed">Card communication failed. Check connection and try again.</string>
+    <string name="coming_soon">Coming soon.</string>
+</resources>
