@@ -1,5 +1,13 @@
 /* global Office */
 
+const IS_WEB = (() => {
+  try {
+    return Office?.context?.platform === Office.PlatformType.OfficeOnline;
+  } catch {
+    return false;
+  }
+})();
+
 const HELPER_URL =
   (typeof window !== "undefined" && (window.SMARTPGP_HELPER_URL || window.localStorage?.getItem("SMARTPGP_HELPER_URL"))) ||
   "https://127.0.0.1:5555";
@@ -14,6 +22,9 @@ Office.actions.associate("showDecryptPane", showDecryptPane);
 
 async function onMessageSendHandler(event) {
   try {
+    if (IS_WEB) {
+      throw new Error("SmartPGP helper is not reachable from Outlook Web. Use Outlook Desktop.");
+    }
     const item = Office.context.mailbox.item;
 
     const bodyText = await getBodyText(item);
@@ -32,11 +43,16 @@ async function onMessageSendHandler(event) {
 }
 
 async function showDecryptPane(event) {
-  // Placeholder: actual UI is in taskpane.html; you can trigger display logic here if needed.
+  if (IS_WEB) {
+    updatePane("SmartPGP crypto is unavailable in Outlook Web. Please use Outlook Desktop with the helper running.");
+  }
   event.completed();
 }
 
 async function helperEncrypt(body, recipients) {
+  if (IS_WEB) {
+    throw new Error("SmartPGP helper is not reachable from Outlook Web.");
+  }
   const response = await fetch(`${HELPER_URL}/encrypt`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -51,6 +67,9 @@ async function helperEncrypt(body, recipients) {
 }
 
 async function helperDecrypt(body) {
+  if (IS_WEB) {
+    throw new Error("SmartPGP helper is not reachable from Outlook Web.");
+  }
   const response = await fetch(`${HELPER_URL}/decrypt`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

@@ -11,6 +11,13 @@
     <h3>SmartPGP Decrypt</h3>
     <button onclick="decryptCurrentMessage()">Decrypt</button>
     <pre id="smartpgp-output"></pre>
+    <div id="smartpgp-web-warning" style="color: #b71c1c; font-weight: 600;"></div>
   </div>
+  <script>
+    if (window.Office && Office.context && Office.context.platform === Office.PlatformType.OfficeOnline) {
+      const warning = document.getElementById("smartpgp-web-warning");
+      warning.textContent = "SmartPGP helper is not reachable from Outlook Web. Please use Outlook Desktop with the helper running.";
+    }
+  </script>
 </body>
 </html>

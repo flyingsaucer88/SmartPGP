@@ -1,0 +1,43 @@
+{
+  "name": "SmartPGP Bridge",
+  "description": "Bridge Outlook Web to the local SmartPGP helper for encryption and decryption.",
+  "version": "0.1.0",
+  "manifest_version": 2,
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "smartpgp-bridge@example.com",
+      "strict_min_version": "91.0"
+    }
+  },
+  "browser_action": {
+    "default_popup": "popup.html",
+    "default_title": "SmartPGP Bridge"
+  },
+  "permissions": [
+    "storage",
+    "activeTab",
+    "https://outlook.office.com/*",
+    "https://outlook.live.com/*",
+    "https://127.0.0.1/*",
+    "https://localhost/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://outlook.office.com/*",
+        "https://outlook.live.com/*"
+      ],
+      "js": ["contentScript.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "background": {
+    "scripts": ["background.js"]
+  },
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  }
+}
