@@ -24,6 +24,7 @@ public class CardService
     /// </summary>
     private async Task<(string output, string error, int exitCode)> ExecuteGPG(string command, string? input = null, int timeoutSeconds = 30)
     {
+        var gnupgHome = Environment.GetEnvironmentVariable("GNUPGHOME");
         var processInfo = new ProcessStartInfo
         {
             FileName = "cmd.exe",
@@ -34,6 +35,10 @@ public class CardService
             UseShellExecute = false,
             CreateNoWindow = true
         };
+        if (!string.IsNullOrWhiteSpace(gnupgHome))
+        {
+            processInfo.Environment["GNUPGHOME"] = gnupgHome!;
+        }
 
         using var process = new Process { StartInfo = processInfo };
         var outputBuilder = new StringBuilder();

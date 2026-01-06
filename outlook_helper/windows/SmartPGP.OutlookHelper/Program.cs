@@ -6,6 +6,13 @@ using SmartPGP.OutlookHelper;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Configure isolated GNUPG home with zero cache TTL to avoid persisting secrets
+var gnupgHome = Path.Combine(Path.GetTempPath(), $"smartpgp-gnupg-{Guid.NewGuid():N}");
+Directory.CreateDirectory(gnupgHome);
+var agentConfPath = Path.Combine(gnupgHome, "gpg-agent.conf");
+File.WriteAllText(agentConfPath, "default-cache-ttl 0\nmax-cache-ttl 0\nallow-loopback-pinentry\n");
+Environment.SetEnvironmentVariable("GNUPGHOME", gnupgHome);
+
 // Configurable options with sensible defaults for local dev
 var allowedOrigins = builder.Configuration.GetSection("SmartPgp:AllowedOrigins").Get<string[]>() ??
                     new[] { "https://localhost", "https://outlook.office.com", "https://outlook.live.com" };
@@ -57,6 +64,19 @@ builder.Services.AddSingleton(sp =>
 });
 
 var app = builder.Build();
+
+// Cleanup temp GNUPGHOME on shutdown
+app.Lifetime.ApplicationStopping.Register(() =>
+{
+    try
+    {
+        Directory.Delete(gnupgHome, true);
+    }
+    catch
+    {
+        // best-effort; ignore
+    }
+});
 
 app.UseCors("Default");
 

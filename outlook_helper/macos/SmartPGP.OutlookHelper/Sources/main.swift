@@ -73,6 +73,13 @@ struct ErrorResponse: Content {
 @main
 struct SmartPGPApp {
     static func main() async throws {
+        let tempGnupg = FileManager.default.temporaryDirectory
+            .appendingPathComponent("smartpgp-gnupg-\(UUID().uuidString)", isDirectory: true)
+        try? FileManager.default.createDirectory(at: tempGnupg, withIntermediateDirectories: true)
+        let agentConf = tempGnupg.appendingPathComponent("gpg-agent.conf")
+        try? "default-cache-ttl 0\nmax-cache-ttl 0\nallow-loopback-pinentry\n".write(to: agentConf, atomically: true, encoding: .utf8)
+        setenv("GNUPGHOME", tempGnupg.path, 1)
+
         let config = SmartPGPConfig.load()
 
         var env = try Environment.detect()
@@ -280,6 +287,10 @@ struct SmartPGPApp {
         print("  GET  /card-status   - Get card status")
         print("  GET  /healthz       - Health check")
         print("")
+
+        defer {
+            try? FileManager.default.removeItem(at: tempGnupg)
+        }
 
         try app.run()
     }

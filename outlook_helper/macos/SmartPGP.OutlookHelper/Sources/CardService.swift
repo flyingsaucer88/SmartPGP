@@ -11,6 +11,11 @@ class CardService {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         process.arguments = ["bash", "-c", command]
+        if let gnupgHome = ProcessInfo.processInfo.environment["GNUPGHOME"] {
+            var env = ProcessInfo.processInfo.environment
+            env["GNUPGHOME"] = gnupgHome
+            process.environment = env
+        }
 
         let outputPipe = Pipe()
         let errorPipe = Pipe()

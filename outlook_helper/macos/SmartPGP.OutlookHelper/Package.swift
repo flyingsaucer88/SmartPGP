@@ -9,12 +9,14 @@ let package = Package(
     dependencies: [
         // Vapor for HTTP server
         .package(url: "https://github.com/vapor/vapor.git", from: "4.89.0"),
+        .package(url: "https://github.com/apple/swift-nio-ssl.git", from: "2.0.0"),
     ],
     targets: [
         .executableTarget(
             name: "SmartPGP.OutlookHelper",
             dependencies: [
                 .product(name: "Vapor", package: "vapor"),
+                .product(name: "NIOSSL", package: "swift-nio-ssl"),
             ],
             path: "Sources",
             swiftSettings: [
