@@ -53,6 +53,16 @@ class MainActivity : AppCompatActivity() {
         usbReader = CardReaderUsb(usbCardManager)
         sessionManager = CardSessionManager(nfcReader, usbReader)
 
+        binding.openEncrypt.setOnClickListener {
+            startActivity(Intent(this, EncryptActivity::class.java))
+        }
+        binding.openDecrypt.setOnClickListener {
+            startActivity(Intent(this, DecryptActivity::class.java))
+        }
+        binding.openCardMgmt.setOnClickListener {
+            startActivity(Intent(this, CardManagementActivity::class.java))
+        }
+
         handleIntent(intent)
     }
 

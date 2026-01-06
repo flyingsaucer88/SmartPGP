@@ -26,4 +26,34 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent" />
 
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/openEncrypt"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:text="@string/encrypt_file"
+        app:layout_constraintTop_toBottomOf="@id/statusText"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        android:layout_marginTop="24dp" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/openDecrypt"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:text="@string/decrypt_file"
+        app:layout_constraintTop_toBottomOf="@id/openEncrypt"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        android:layout_marginTop="12dp" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/openCardMgmt"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:text="@string/card_management"
+        app:layout_constraintTop_toBottomOf="@id/openDecrypt"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        android:layout_marginTop="12dp" />
+
 </androidx.constraintlayout.widget.ConstraintLayout>
