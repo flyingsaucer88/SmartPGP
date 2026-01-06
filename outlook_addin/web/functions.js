@@ -1,6 +1,8 @@
 /* global Office */
 
-const HELPER_URL = "https://127.0.0.1:5555";
+const HELPER_URL =
+  (typeof window !== "undefined" && (window.SMARTPGP_HELPER_URL || window.localStorage?.getItem("SMARTPGP_HELPER_URL"))) ||
+  "https://127.0.0.1:5555";
 
 Office.onReady(() => {
   // no-op

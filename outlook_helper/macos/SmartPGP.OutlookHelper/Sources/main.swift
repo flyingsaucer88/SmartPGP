@@ -4,20 +4,26 @@
 
 import Vapor
 import Foundation
+import NIOSSL
 
 // MARK: - Configuration
 
 struct SmartPGPConfig {
     let port: Int
-    let allowedOrigin: String
+    let allowedOrigins: [String]
     let certificatePath: String?
     let certificatePassword: String?
     let signerId: String?
 
     static func load() -> SmartPGPConfig {
+        let originsEnv = ProcessInfo.processInfo.environment["SMARTPGP_ALLOWED_ORIGINS"]
+            ?? ProcessInfo.processInfo.environment["SMARTPGP_ALLOWED_ORIGIN"]
+            ?? "https://localhost,https://outlook.office.com,https://outlook.live.com"
+        let origins = originsEnv.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+
         return SmartPGPConfig(
             port: Int(ProcessInfo.processInfo.environment["SMARTPGP_PORT"] ?? "5555") ?? 5555,
-            allowedOrigin: ProcessInfo.processInfo.environment["SMARTPGP_ALLOWED_ORIGIN"] ?? "https://localhost",
+            allowedOrigins: origins,
             certificatePath: ProcessInfo.processInfo.environment["SMARTPGP_CERT_PATH"],
             certificatePassword: ProcessInfo.processInfo.environment["SMARTPGP_CERT_PASSWORD"],
             signerId: ProcessInfo.processInfo.environment["SMARTPGP_SIGNER_ID"]
@@ -80,11 +86,34 @@ struct SmartPGPApp {
         app.http.server.configuration.port = config.port
 
         // Configure TLS if certificate is provided
-        if let certPath = config.certificatePath,
-           let certPassword = config.certificatePassword {
-            // Note: Vapor TLS configuration would go here
-            // For now, we'll use HTTP and rely on external TLS termination
-            print("Note: TLS certificate specified but not yet implemented in Swift version")
+        if let certPath = config.certificatePath {
+            do {
+                let lowercased = certPath.lowercased()
+                let certificateChain: [NIOSSLCertificateSource]
+                let privateKey: NIOSSLPrivateKeySource
+
+                if let certPassword = config.certificatePassword,
+                   lowercased.hasSuffix(".p12") || lowercased.hasSuffix(".pfx") {
+                    certificateChain = [.pkcs12(file: certPath, password: certPassword)]
+                    privateKey = .pkcs12(file: certPath, password: certPassword)
+                } else {
+                    let certificates = try NIOSSLCertificate.fromPEMFile(certPath)
+                    guard !certificates.isEmpty else {
+                        throw Abort(.internalServerError, reason: "No certificates found at \(certPath)")
+                    }
+                    certificateChain = certificates.map { .certificate($0) }
+                    privateKey = .file(certPath)
+                }
+
+                let tlsConfiguration = TLSConfiguration.makeServerConfiguration(
+                    certificateChain: certificateChain,
+                    privateKey: privateKey
+                )
+                app.http.server.configuration.tlsConfiguration = tlsConfiguration
+                app.logger.info("TLS enabled with certificate at \(certPath)")
+            } catch {
+                app.logger.warning("TLS configuration failed: \(error.localizedDescription). Falling back to HTTP.")
+            }
         }
 
         // Initialize services
@@ -92,8 +121,11 @@ struct SmartPGPApp {
         let cardService = CardService()
 
         // CORS middleware
-        let cors Configuration = CORSMiddleware.Configuration(
-            allowedOrigin: .custom(config.allowedOrigin),
+        let allowedSet = Set(config.allowedOrigins.map { $0.lowercased() })
+        let corsConfiguration = CORSMiddleware.Configuration(
+            allowedOrigin: .originBased { origin in
+                allowedSet.contains(origin.lowercased())
+            },
             allowedMethods: [.GET, .POST, .OPTIONS],
             allowedHeaders: [.accept, .authorization, .contentType, .origin]
         )
@@ -231,9 +263,10 @@ struct SmartPGPApp {
         }
 
         // Start server
+        let scheme = app.http.server.configuration.tlsConfiguration == nil ? "http" : "https"
         print("SmartPGP Outlook Helper for macOS")
-        print("Listening on https://127.0.0.1:\(config.port)")
-        print("Allowed origin: \(config.allowedOrigin)")
+        print("Listening on \(scheme)://127.0.0.1:\(config.port)")
+        print("Allowed origins: \(config.allowedOrigins.joined(separator: \", \"))")
         if let signerId = config.signerId {
             print("Signer ID: \(signerId)")
         }

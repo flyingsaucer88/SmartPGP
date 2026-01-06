@@ -78,6 +78,43 @@
             </mailappor:MessageSendCommands>
           </mailappor:ExtensionPoint>
         </mailappor:DesktopFormFactor>
+
+        <mailappor:MobileFormFactor>
+          <!-- Web/OWA form factor uses the same commands/resources; actual connectivity to localhost still constrained by browser sandbox. -->
+          <mailappor:ExtensionPoint xsi:type="mailappor:MessageComposeCommandSurface">
+            <mailappor:OfficeTab id="TabDefault">
+              <mailappor:Group id="SmartPgpComposeGroupMobile" label="SmartPGP">
+                <mailappor:Control xsi:type="mailappor:Button"
+                                   id="EncryptSendButtonMobile"
+                                   label="Encrypt &amp; Send"
+                                   onAction="encryptAndSend"
+                                   icon="https://localhost:3000/assets/icon-16.png" />
+              </mailappor:Group>
+            </mailappor:OfficeTab>
+          </mailappor:ExtensionPoint>
+
+          <mailappor:ExtensionPoint xsi:type="mailappor:MessageReadCommandSurface">
+            <mailappor:OfficeTab id="TabDefault">
+              <mailappor:Group id="SmartPgpReadGroupMobile" label="SmartPGP">
+                <mailappor:Control xsi:type="mailappor:Button"
+                                   id="DecryptButtonMobile"
+                                   label="Decrypt"
+                                   onAction="showDecryptPane"
+                                   icon="https://localhost:3000/assets/icon-16.png" />
+              </mailappor:Group>
+            </mailappor:OfficeTab>
+          </mailappor:ExtensionPoint>
+
+          <mailappor:ExtensionPoint xsi:type="mailappor:MessageSendCommand">
+            <mailappor:MessageSendCommands>
+              <mailappor:Command id="OnMessageSendHandlerMobile"
+                                 type="OnMessageSend"
+                                 functionName="onMessageSendHandler" />
+            </mailappor:MessageSendCommands>
+          </mailappor:ExtensionPoint>
+
+          <mailappor:FunctionFile resid="functionFile" />
+        </mailappor:MobileFormFactor>
       </mailappor:Host>
     </mailappor:Hosts>
 

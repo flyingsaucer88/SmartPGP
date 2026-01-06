@@ -7,7 +7,8 @@ using SmartPGP.OutlookHelper;
 var builder = WebApplication.CreateBuilder(args);
 
 // Configurable options with sensible defaults for local dev
-var allowedOrigin = builder.Configuration.GetValue<string>("SmartPgp:AllowedOrigin") ?? "https://localhost";
+var allowedOrigins = builder.Configuration.GetSection("SmartPgp:AllowedOrigins").Get<string[]>() ??
+                    new[] { "https://localhost", "https://outlook.office.com", "https://outlook.live.com" };
 var listenPort = builder.Configuration.GetValue("SmartPgp:Port", 5555);
 var certPath = builder.Configuration.GetValue<string>("SmartPgp:CertificatePath"); // e.g., certs/localhost.pfx
 var certPassword = builder.Configuration.GetValue<string>("SmartPgp:CertificatePassword");
@@ -22,7 +23,7 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("Default", policy =>
     {
-        policy.WithOrigins(allowedOrigin)
+        policy.WithOrigins(allowedOrigins)
               .AllowAnyHeader()
               .AllowAnyMethod();
     });
