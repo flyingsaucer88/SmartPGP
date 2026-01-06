@@ -23,7 +23,8 @@ import java.io.IOException
 
 class CardManagementActivity : AppCompatActivity() {
 
-    private lateinit var binding: ActivityCardManagementBinding
+    private var binding: ActivityCardManagementBinding? = null
+    private val ui get() = binding!!
     private lateinit var nfcManager: NFCCardManager
     private lateinit var nfcReader: CardReader
     private lateinit var usbManager: UsbCardManager
@@ -47,8 +48,9 @@ class CardManagementActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        binding = ActivityCardManagementBinding.inflate(layoutInflater)
-        setContentView(binding.root)
+        val bind = ActivityCardManagementBinding.inflate(layoutInflater)
+        binding = bind
+        setContentView(bind.root)
 
         nfcManager = NFCCardManager(this)
         nfcReader = CardReader(nfcManager)
@@ -56,8 +58,8 @@ class CardManagementActivity : AppCompatActivity() {
         usbReader = CardReaderUsb(usbManager)
         sessionManager = CardSessionManager(nfcReader, usbReader)
 
-        binding.generateKeyButton.setOnClickListener { generateKeyPair() }
-        binding.changePinButton.setOnClickListener { changePin() }
+        ui.generateKeyButton.setOnClickListener { generateKeyPair() }
+        ui.changePinButton.setOnClickListener { changePin() }
 
         handleIntent(intent)
     }
@@ -77,6 +79,7 @@ class CardManagementActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         activeChannel?.close()
+        binding = null
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -105,7 +108,7 @@ class CardManagementActivity : AppCompatActivity() {
         lifecycleScope.launch {
             try {
                 val pub = manager.generateEncryptionKeyPair()
-                binding.keygenStatus.text = getString(R.string.key_loaded) + " (${pub.size} bytes)"
+                ui.keygenStatus.text = getString(R.string.key_loaded) + " (${pub.size} bytes)"
             } catch (e: IOException) {
                 ErrorDialog.newInstance(e.message ?: getString(R.string.status_failed))
                     .show(supportFragmentManager, "error")
@@ -118,12 +121,12 @@ class CardManagementActivity : AppCompatActivity() {
             setStatus(getString(R.string.status_waiting_card))
             return
         }
-        val oldPin = binding.oldPinInput.text?.toString()?.toCharArray() ?: CharArray(0)
-        val newPin = binding.newPinInput.text?.toString()?.toCharArray() ?: CharArray(0)
+        val oldPin = ui.oldPinInput.text?.toString()?.toCharArray() ?: CharArray(0)
+        val newPin = ui.newPinInput.text?.toString()?.toCharArray() ?: CharArray(0)
         lifecycleScope.launch {
             try {
                 val success = manager.changePin(oldPin, newPin)
-                binding.pinStatus.text = if (success) getString(R.string.change_pin) else getString(R.string.status_failed)
+                ui.pinStatus.text = if (success) getString(R.string.change_pin) else getString(R.string.status_failed)
             } catch (e: IOException) {
                 ErrorDialog.newInstance(e.message ?: getString(R.string.status_failed))
                     .show(supportFragmentManager, "error")
@@ -132,7 +135,7 @@ class CardManagementActivity : AppCompatActivity() {
     }
 
     private fun setStatus(text: String) {
-        binding.keygenStatus.text = text
-        binding.pinStatus.text = text
+        ui.keygenStatus.text = text
+        ui.pinStatus.text = text
     }
 }

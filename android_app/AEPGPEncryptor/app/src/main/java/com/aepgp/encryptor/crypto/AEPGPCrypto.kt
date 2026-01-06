@@ -1,5 +1,6 @@
 package com.aepgp.encryptor.crypto
 
+import android.content.Context
 import com.aepgp.encryptor.utils.FileUtils
 import java.io.File
 import java.io.IOException
@@ -25,6 +26,7 @@ class AEPGPCrypto(
 
     @Throws(IOException::class)
     fun encryptStream(
+        context: Context,
         input: InputStream,
         output: OutputStream,
         publicKeyBytes: ByteArray,
@@ -36,7 +38,7 @@ class AEPGPCrypto(
         val aesKey: SecretKey = aes.generateKey()
         val rsaWrappedKey = rsa.encryptKey(aesKey, publicKey)
 
-        val tempFile = File.createTempFile("aepgp_enc_", ".tmp")
+        val tempFile = File.createTempFile("aepgp_enc_", ".tmp", context.cacheDir)
         val aesResult = aes.encryptToTempFile(aesKey, input, tempFile, onProgress)
 
         output.write(CryptoUtils.toBigEndianUInt(rsaWrappedKey.size))

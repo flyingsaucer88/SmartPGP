@@ -26,7 +26,7 @@ class FileEncryptor(
         val resolver = context.contentResolver
         resolver.openInputStream(inputUri)?.use { input ->
             resolver.openOutputStream(outputUri, "w")?.use { output ->
-                crypto.encryptStream(input, output, publicKey) { processed ->
+                crypto.encryptStream(context, input, output, publicKey) { processed ->
                     onProgress(processed, totalSize)
                 }
             } ?: throw IOException("Unable to open output $outputUri")

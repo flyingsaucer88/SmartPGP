@@ -26,7 +26,8 @@ import java.io.IOException
 
 class DecryptActivity : AppCompatActivity() {
 
-    private lateinit var binding: ActivityDecryptBinding
+    private var binding: ActivityDecryptBinding? = null
+    private val ui get() = binding!!
     private lateinit var decryptor: FileDecryptor
 
     private lateinit var nfcManager: NFCCardManager
@@ -48,7 +49,7 @@ class DecryptActivity : AppCompatActivity() {
                     Intent.FLAG_GRANT_READ_URI_PERMISSION
                 )
                 encryptedUri = uri
-                binding.encryptedFileText.text = uri.lastPathSegment ?: uri.toString()
+                ui.encryptedFileText.text = uri.lastPathSegment ?: uri.toString()
                 outputUri = null
             }
         }
@@ -76,8 +77,9 @@ class DecryptActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        binding = ActivityDecryptBinding.inflate(layoutInflater)
-        setContentView(binding.root)
+        val bind = ActivityDecryptBinding.inflate(layoutInflater)
+        binding = bind
+        setContentView(bind.root)
 
         decryptor = FileDecryptor(this)
         nfcManager = NFCCardManager(this)
@@ -86,8 +88,8 @@ class DecryptActivity : AppCompatActivity() {
         usbReader = CardReaderUsb(usbManager)
         sessionManager = CardSessionManager(nfcReader, usbReader)
 
-        binding.selectEncryptedButton.setOnClickListener { selectEncryptedLauncher.launch(arrayOf("*/*")) }
-        binding.decryptButton.setOnClickListener { prepareOutputAndDecrypt() }
+        ui.selectEncryptedButton.setOnClickListener { selectEncryptedLauncher.launch(arrayOf("*/*")) }
+        ui.decryptButton.setOnClickListener { prepareOutputAndDecrypt() }
 
         handleIntent(intent)
     }
@@ -107,6 +109,7 @@ class DecryptActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         activeChannel?.close()
+        binding = null
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -138,7 +141,7 @@ class DecryptActivity : AppCompatActivity() {
             return
         }
         if (outputUri == null) {
-            val suggested = (binding.encryptedFileText.text?.toString() ?: "decrypted").removeSuffix(".enc")
+            val suggested = (ui.encryptedFileText.text?.toString() ?: "decrypted").removeSuffix(".enc")
             createOutputLauncher.launch(suggested)
         } else {
             startDecryption()
@@ -172,6 +175,6 @@ class DecryptActivity : AppCompatActivity() {
     }
 
     private fun setStatus(text: String) {
-        binding.decryptStatus.text = text
+        ui.decryptStatus.text = text
     }
 }

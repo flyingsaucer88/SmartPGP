@@ -27,7 +27,8 @@ import java.io.IOException
 
 class EncryptActivity : AppCompatActivity() {
 
-    private lateinit var binding: ActivityEncryptBinding
+    private var binding: ActivityEncryptBinding? = null
+    private val ui get() = binding!!
     private lateinit var fileEncryptor: FileEncryptor
     private var inputUri: Uri? = null
     private var outputUri: Uri? = null
@@ -49,7 +50,7 @@ class EncryptActivity : AppCompatActivity() {
                     Intent.FLAG_GRANT_READ_URI_PERMISSION
                 )
                 inputUri = uri
-                binding.selectedFileText.text = uri.lastPathSegment ?: uri.toString()
+                ui.selectedFileText.text = uri.lastPathSegment ?: uri.toString()
                 outputUri = null
             }
         }
@@ -77,8 +78,9 @@ class EncryptActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        binding = ActivityEncryptBinding.inflate(layoutInflater)
-        setContentView(binding.root)
+        val bind = ActivityEncryptBinding.inflate(layoutInflater)
+        binding = bind
+        setContentView(bind.root)
 
         fileEncryptor = FileEncryptor(this)
         nfcManager = NFCCardManager(this)
@@ -87,9 +89,9 @@ class EncryptActivity : AppCompatActivity() {
         usbReader = CardReaderUsb(usbManager)
         sessionManager = CardSessionManager(nfcReader, usbReader)
 
-        binding.selectFileButton.setOnClickListener { pickFileLauncher.launch(arrayOf("*/*")) }
-        binding.fetchKeyButton.setOnClickListener { loadPublicKeyFromCard() }
-        binding.encryptButton.setOnClickListener { prepareOutputAndEncrypt() }
+        ui.selectFileButton.setOnClickListener { pickFileLauncher.launch(arrayOf("*/*")) }
+        ui.fetchKeyButton.setOnClickListener { loadPublicKeyFromCard() }
+        ui.encryptButton.setOnClickListener { prepareOutputAndEncrypt() }
 
         handleIntent(intent)
     }
@@ -109,6 +111,7 @@ class EncryptActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         activeChannel?.close()
+        binding = null
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -158,7 +161,7 @@ class EncryptActivity : AppCompatActivity() {
         }
 
         if (outputUri == null) {
-            val suggestedName = (binding.selectedFileText.text?.toString() ?: "encrypted") + ".enc"
+            val suggestedName = (ui.selectedFileText.text?.toString() ?: "encrypted") + ".enc"
             createOutputLauncher.launch(suggestedName)
         } else {
             startEncryption()
@@ -187,7 +190,7 @@ class EncryptActivity : AppCompatActivity() {
     }
 
     private fun setStatus(text: String) {
-        binding.encryptStatus.text = text
-        binding.keyStatusText.text = text
+        ui.encryptStatus.text = text
+        ui.keyStatusText.text = text
     }
 }
