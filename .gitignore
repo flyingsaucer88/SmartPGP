@@ -2,3 +2,9 @@ ant-javacard.jar
 build
 SmartPGPApplet.cap
 **/__pycache__/
+
+# Outlook integration (kept in separate branch)
+outlook_helper/
+outlook_addin/
+browser_extension/
+OUTLOOK_*.md
