@@ -116,14 +116,165 @@ The repository contains several directories:
 - `bin` contains a Python library and command line tool called
   `smartpgp-cli` to interact with an OpenPGP card 3.x but also to deal
   with the specific secure messaging feature of the SmartPGP applet;
-  
+
+  - `bin/windows_context_menu` contains the AEPGP Windows context menu integration
+    for easy file encryption/decryption via Windows Explorer (see [Windows Integration](#windows-integration) below);
+
 - `secure_messaging` contains documentation and example scripts to
   play with the secure messaging feature of SmartPGP;
-  
+
 - `src` contains the JavaCard source code of the SmartPGP applet;
 
 - `videos` contains sample videos demonstrating smartcard interactions
   with OpenKeychain and K9 mail on Android Nexus 5.
+
+
+# Windows Integration
+
+The `bin/windows_context_menu` directory provides a complete Windows Explorer integration for AEPGP SmartPGP cards, enabling easy file encryption and decryption via right-click context menus.
+
+## Features
+
+### File Operations
+- **Encrypt File**: Encrypt any file using RSA-2048 encryption with the card's public key
+- **Decrypt File**: Decrypt `.enc` files using the card's private key (PIN required)
+- Files are encrypted with AES-256-GCM for data and RSA-2048 for key wrapping
+
+### Card Management
+- **Generate Keys**: Generate RSA-2048 key pairs directly on the card
+  - Prompts for a key alias that is stored on the card (Private DO 0x0102)
+  - Alias persists across sessions and can be read without PIN
+  - Confirms before overwriting existing keys
+- **Delete Keys**: Remove key pairs from the card (requires admin PIN)
+- **Change PIN**: Change user PIN or admin PIN
+
+### Automatic File Visibility Management
+- **Background Watcher**: Automatically hides/shows `.enc` files based on card presence
+  - Hidden when no AEPGP card is detected
+  - Visible when an AEPGP card is inserted
+  - Runs at user logon via Windows startup registry
+  - Monitors Desktop, Documents, and Downloads folders by default
+  - Configurable via environment variables:
+    - `AEPGP_WATCH_PATHS`: Semicolon-separated list of paths to monitor (e.g., `C:\Files;D:\Data`)
+    - `AEPGP_POLL_INTERVAL_SEC`: Card detection interval in seconds (default: 5)
+    - `AEPGP_RESCAN_INTERVAL_SEC`: Full file rescan interval in seconds (default: 60)
+
+## Installation
+
+### Quick Install (Recommended)
+
+1. Run the MSI installer (requires Administrator privileges):
+   ```powershell
+   msiexec /i bin\windows_context_menu\dist\AEPGPContextMenu-1.3.1.msi
+   ```
+
+   The installer will:
+   - Install all context menu handlers
+   - Register the background visibility watcher to start at user logon
+   - Set up automatic updates for future versions
+
+### Manual Installation
+
+1. Install Python 3.8+ and required dependencies:
+   ```powershell
+   pip install pyscard pyasn1 cryptography
+   ```
+
+2. Run the installation script with Administrator privileges:
+   ```powershell
+   python bin\windows_context_menu\install_menu.py
+   ```
+
+3. The installer will:
+   - Register all context menu handlers in Windows Registry
+   - Install the visibility watcher to run at user logon
+   - Verify all required files are present
+
+## Usage
+
+### Encrypting Files
+
+1. Right-click any file in Windows Explorer
+2. Select **AEPGP: Encrypt File**
+3. Insert your AEPGP card when prompted
+4. Choose a recipient (or use card owner for self-encryption)
+5. The encrypted file will be created with `.enc` extension
+
+### Decrypting Files
+
+1. Right-click any `.enc` file in Windows Explorer
+2. Select **AEPGP: Decrypt File**
+3. Insert your AEPGP card and enter your PIN when prompted
+4. The decrypted file will be saved in the same directory
+
+### Generating Keys
+
+1. Right-click anywhere in Windows Explorer
+2. Select **AEPGP: Generate Keys**
+3. Insert your AEPGP card
+4. Enter a key alias when prompted (stored on the card)
+5. Confirm with admin PIN (default: `12345678`)
+6. Wait 30-60 seconds for key generation to complete
+
+The key alias is stored in Private DO 0x0102 on the card and can be read without PIN authentication. This allows the system to identify the key pair owner even when the card is not authenticated.
+
+### Card-Stored Alias
+
+The key pair alias is stored directly on the AEPGP card using Private Data Object (DO) 0x0102:
+- **Reading**: No PIN required - the alias can be read anytime the card is present
+- **Writing**: Requires admin PIN - only set during key generation
+- **Persistence**: Survives card removal and reinsertion
+- **Format**: ASCII string, maximum 255 bytes
+- **Purpose**: Identifies the card owner for encryption operations
+
+This is supported by the SmartPGP applet's private DO implementation (see `SmartPGPApplet.java` lines 1019-1050 and `Constants.java` lines 103-106).
+
+## Technical Details
+
+### Encryption Format
+- **Algorithm**: RSA-2048 with AES-256-GCM
+- **Key Wrapping**: RSA-OAEP with SHA-256
+- **File Format**: OpenPGP-compatible encrypted messages
+- **Card Operations**: All private key operations performed on-card
+
+### Card Detection
+- Supports multiple ATR patterns for AEPGP/SmartPGP cards
+- Compatible with Gemalto/NXP JCOP cards running SmartPGP applet
+- Automatic reader selection and card connection management
+
+### File Visibility Management
+- Uses Windows hidden file attribute (not encryption-based hiding)
+- Background process (`visibility_watcher.py`) monitors card presence every 5 seconds
+- Rescans configured directories every 60 seconds for new `.enc` files
+- Skips system directories (`.git`, `node_modules`, `__pycache__`, `AppData`)
+- Minimal CPU and memory footprint
+
+### Debug Logging
+All operations are logged to `%APPDATA%\AEPGP\logs\aepgp_YYYYMMDD.log` for troubleshooting.
+
+## Uninstallation
+
+Run the uninstaller script with Administrator privileges:
+```powershell
+python bin\windows_context_menu\uninstall_menu.py
+```
+
+This will:
+- Remove all context menu entries from Windows Registry
+- Remove the visibility watcher from user startup
+- Preserve encrypted files and debug logs
+
+## Requirements
+
+- Windows 10 or later
+- Python 3.8 or later
+- Smart card reader (USB CCID compliant)
+- AEPGP SmartPGP card with RSA-2048 key pair
+- Administrator privileges (for installation only)
+
+## Documentation
+
+Comprehensive documentation is available in `bin/windows_context_menu/README.md`.
 
 
 

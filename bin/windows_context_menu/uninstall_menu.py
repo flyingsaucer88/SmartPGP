@@ -130,6 +130,30 @@ def remove_version_info():
         return False
 
 
+def remove_visibility_watcher_startup():
+    """Remove the visibility watcher from user startup."""
+    try:
+        key = winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\CurrentVersion\Run",
+            0,
+            winreg.KEY_ALL_ACCESS
+        )
+        try:
+            winreg.DeleteValue(key, "AEPGPVisibilityWatcher")
+            print("  ✓ Removed visibility watcher startup entry")
+        except FileNotFoundError:
+            print("  - Visibility watcher startup entry not found")
+        winreg.CloseKey(key)
+        return True
+    except FileNotFoundError:
+        print("  - Startup registry key not found")
+        return True
+    except Exception as e:
+        print(f"  ⚠ Could not remove watcher startup entry: {e}")
+        return False
+
+
 def delete_debug_log():
     """Delete the debug log file"""
     try:
@@ -194,6 +218,7 @@ def main():
 
     menu_removed = uninstall_cascading_menus()
     version_removed = remove_version_info()
+    watcher_removed = remove_visibility_watcher_startup()
     log_deleted = delete_debug_log()
 
     # Summary

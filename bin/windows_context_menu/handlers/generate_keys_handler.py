@@ -27,35 +27,14 @@ def generate_keys():
     logger.log_system_info()
 
     try:
-        # Show confirmation dialog
-        confirmed = card_utils.show_question_dialog(
-            "This will generate a new RSA-2048 key pair on your AEPGP card.\n\n"
-            "WARNING: This will overwrite any existing keys!\n\n"
-            "Slot: Decryption/Encryption key\n"
-            "Algorithm: RSA-2048\n\n"
-            "Do you want to continue?",
-            "Generate Keys in Card"
-        )
-
-        if not confirmed:
-            logger.info("User cancelled key generation")
-            logger.log_operation_end("Generate Keys", False, "User cancelled")
-            return
-
-        logger.info("Starting key generation on card...")
-
-        # Connect to card
-        from card_utils import AEPGPCard
-        card = AEPGPCard()
-
-        if not card.connect():
-            error_msg = "Failed to connect to AEPGP card"
+        logger.info("Connecting to AEPGP card...")
+        card, error = card_utils.find_aepgp_card()
+        if error:
+            error_msg = f"AEPGP card not found: {error}"
             logger.error(error_msg)
             card_utils.show_error_dialog(
-                "Could not connect to AEPGP card.\n\n"
-                "Please ensure:\n"
-                "1. The card is inserted\n"
-                "2. No other application is using the card",
+                f"AEPGP card not found:\n\n{error}\n\n"
+                "Please insert your AEPGP card and try again.",
                 "Connection Error"
             )
             logger.log_operation_end("Generate Keys", False, error_msg)
@@ -63,6 +42,87 @@ def generate_keys():
 
         try:
             logger.info("Connected to card, starting key generation...")
+
+            # Select OpenPGP applet
+            card.select_applet()
+
+            # Check if a key pair already exists in decryption slot
+            read_apdu = [0x00, 0x47, 0x81, 0x00, 0x02, 0xB8, 0x00, 0x00]
+            response, sw1, sw2 = card.connection.transmit(read_apdu)
+            card._log_apdu(read_apdu, response, sw1, sw2)
+
+            key_exists = False
+            if sw1 == 0x61 or (sw1 == 0x90 and sw2 == 0x00):
+                key_exists = True
+            elif sw1 == 0x6A and sw2 == 0x88:
+                key_exists = False
+            else:
+                error_msg = f"Failed to check existing key: SW={sw1:02X}{sw2:02X}"
+                logger.error(error_msg)
+                card_utils.show_error_dialog(
+                    f"Could not verify existing key state.\n\n"
+                    f"Status: {sw1:02X}{sw2:02X}",
+                    "Key Check Error"
+                )
+                logger.log_operation_end("Generate Keys", False, error_msg)
+                return
+
+            existing_alias = card_utils.get_key_alias(card) if key_exists else None
+            alias_display = existing_alias if existing_alias else "Unknown"
+
+            if key_exists:
+                confirm_message = (
+                    "A key pair already exists on this AEPGP card.\n\n"
+                    f"Existing alias: {alias_display}\n\n"
+                    "This will delete the existing key pair and generate a new one.\n"
+                    "Do you want to continue?"
+                )
+            else:
+                confirm_message = (
+                    "This will generate a new RSA-2048 key pair on your AEPGP card.\n\n"
+                    "Slot: Decryption/Encryption key\n"
+                    "Algorithm: RSA-2048\n\n"
+                    "Do you want to continue?"
+                )
+
+            confirmed = card_utils.show_question_dialog(
+                confirm_message,
+                "Generate Keys in Card"
+            )
+
+            if not confirmed:
+                logger.info("User cancelled key generation")
+                logger.log_operation_end("Generate Keys", False, "User cancelled")
+                return
+
+            alias = card_utils.show_input_dialog(
+                "Enter an alias for the new key pair:",
+                "Key Pair Alias"
+            )
+            if not alias:
+                logger.info("User cancelled alias entry")
+                card_utils.show_error_dialog(
+                    "Key alias is required. Operation cancelled.",
+                    "Key Generation Cancelled"
+                )
+                logger.log_operation_end("Generate Keys", False, "Alias required")
+                return
+            try:
+                alias_bytes = alias.encode("ascii")
+            except UnicodeEncodeError:
+                card_utils.show_error_dialog(
+                    "Alias must contain only ASCII characters.",
+                    "Alias Error"
+                )
+                logger.log_operation_end("Generate Keys", False, "Alias not ASCII")
+                return
+            if len(alias_bytes) > 255:
+                card_utils.show_error_dialog(
+                    "Alias is too long (max 255 characters).",
+                    "Alias Error"
+                )
+                logger.log_operation_end("Generate Keys", False, "Alias too long")
+                return
 
             # Verify admin PIN (required for key generation)
             logger.info("Verifying admin PIN...")
@@ -88,6 +148,9 @@ def generate_keys():
                 return
 
             logger.info("Admin PIN verified")
+
+            if key_exists:
+                card_utils.clear_key_alias(card)
 
             # Show progress dialog
             card_utils.show_info_dialog(
@@ -146,8 +209,16 @@ def generate_keys():
                 logger.warning(f"Key verification returned SW={sw1:02X}{sw2:02X}, but generation reported success")
 
             # Success!
+            if not card_utils.set_key_alias(card, alias):
+                card_utils.show_error_dialog(
+                    "Failed to store key alias on the card.",
+                    "Alias Error"
+                )
+                logger.log_operation_end("Generate Keys", False, "Alias store failed")
+                return
             card_utils.show_info_dialog(
                 "RSA-2048 key pair generated successfully!\n\n"
+                f"Alias: {alias}\n"
                 "Slot: Decryption/Encryption\n"
                 "Algorithm: RSA-2048\n\n"
                 "The key pair is now stored securely on your AEPGP card.\n"

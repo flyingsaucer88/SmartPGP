@@ -53,6 +53,7 @@ def get_script_paths():
     """Get the absolute paths to the handler scripts"""
     script_dir = os.path.dirname(os.path.abspath(__file__))
     handlers_dir = os.path.join(script_dir, "handlers")
+    watcher_script = os.path.join(script_dir, "visibility_watcher.py")
 
     encrypt_handler = os.path.join(handlers_dir, "encrypt_handler.py")
     decrypt_handler = os.path.join(handlers_dir, "decrypt_handler.py")
@@ -74,8 +75,17 @@ def get_script_paths():
     #     raise FileNotFoundError(f"Import PFX handler not found: {import_pfx_handler}")
     if not os.path.exists(change_pin_handler):
         raise FileNotFoundError(f"Change PIN handler not found: {change_pin_handler}")
+    if not os.path.exists(watcher_script):
+        raise FileNotFoundError(f"Visibility watcher not found: {watcher_script}")
 
-    return encrypt_handler, decrypt_handler, generate_keys_handler, delete_keys_handler, change_pin_handler  # Removed import_pfx_handler
+    return (
+        encrypt_handler,
+        decrypt_handler,
+        generate_keys_handler,
+        delete_keys_handler,
+        change_pin_handler,
+        watcher_script,
+    )  # Removed import_pfx_handler
 
 
 def install_cascading_menu_for_all_files(handlers):
@@ -90,7 +100,7 @@ def install_cascading_menu_for_all_files(handlers):
         ├── AEPGP: Delete Keys
         └── AEPGP: Change PIN
     """
-    encrypt_handler, decrypt_handler, generate_keys_handler, delete_keys_handler, change_pin_handler = handlers
+    encrypt_handler, decrypt_handler, generate_keys_handler, delete_keys_handler, change_pin_handler, _ = handlers
 
     try:
         python_exe = sys.executable.replace("python.exe", "pythonw.exe")
@@ -186,7 +196,7 @@ def install_cascading_menu_for_desktop(handlers):
         ├── Delete Keys from Card
         └── Change Card PIN
     """
-    _, _, generate_keys_handler, delete_keys_handler, change_pin_handler = handlers
+    _, _, generate_keys_handler, delete_keys_handler, change_pin_handler, _ = handlers
 
     try:
         python_exe = sys.executable.replace("python.exe", "pythonw.exe")
@@ -282,6 +292,32 @@ def create_debug_log():
         return False
 
 
+def install_visibility_watcher_startup(watcher_script):
+    """Install the visibility watcher to run at user logon."""
+    try:
+        python_exe = sys.executable.replace("python.exe", "pythonw.exe")
+        if not os.path.exists(python_exe):
+            python_exe = sys.executable
+
+        run_key = winreg.CreateKey(
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\CurrentVersion\Run"
+        )
+        winreg.SetValueEx(
+            run_key,
+            "AEPGPVisibilityWatcher",
+            0,
+            winreg.REG_SZ,
+            f'"{python_exe}" "{watcher_script}"'
+        )
+        winreg.CloseKey(run_key)
+        print("  ✓ Installed visibility watcher startup entry")
+        return True
+    except Exception as e:
+        print(f"  ! Warning: Could not install watcher startup: {e}")
+        return False
+
+
 def main():
     """Main installation function"""
     print("=" * 70)
@@ -314,13 +350,14 @@ def main():
     # Get handler script paths
     try:
         handlers = get_script_paths()
-        encrypt_handler, decrypt_handler, generate_keys_handler, delete_keys_handler, change_pin_handler = handlers
+        encrypt_handler, decrypt_handler, generate_keys_handler, delete_keys_handler, change_pin_handler, watcher_script = handlers
         print(f"\nFound encrypt handler: {encrypt_handler}")
         print(f"Found decrypt handler: {decrypt_handler}")
         print(f"Found generate keys handler: {generate_keys_handler}")
         print(f"Found delete keys handler: {delete_keys_handler}")
         # print(f"Found import PFX handler: {import_pfx_handler}")  # DISABLED
         print(f"Found change PIN handler: {change_pin_handler}")
+        print(f"Found visibility watcher: {watcher_script}")
     except FileNotFoundError as e:
         print(f"\nERROR: {e}")
         print("\nPress Enter to exit...")
@@ -337,6 +374,9 @@ def main():
 
     # Create fresh debug log file
     create_debug_log()
+
+    # Install visibility watcher startup entry
+    watcher_ok = install_visibility_watcher_startup(watcher_script)
 
     # Store version information
     if all_files_ok and desktop_ok:
@@ -355,6 +395,8 @@ def main():
         print("  • Decrypt File")
         print("  • Generate Keys in Card")
         print("  • Change Card PIN")
+        if not watcher_ok:
+            print("\nNote: Visibility watcher could not be installed at startup.")
         print("\nNOTE: On Windows 11, AEPGP appears in 'Show more options'")
         print("      (or you can use SHIFT+Right-click)")
     else:

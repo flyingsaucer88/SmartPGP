@@ -72,6 +72,7 @@ def encrypt_file(filepath):
         if success:
             # Success!
             logger.info(f"Encryption successful, output: {output_path}")
+            card_utils.sync_encrypted_file_visibility(output_path)
 
             # Get file sizes for display
             original_size = os.path.getsize(filepath)
