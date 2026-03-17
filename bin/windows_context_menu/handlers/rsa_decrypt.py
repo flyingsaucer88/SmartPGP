@@ -114,9 +114,13 @@ def decrypt_file_with_card(input_file, output_file, pin=None):
             logger.info("Verifying PIN...")
             print("Verifying PIN...")
 
-            # Use default PIN if not provided
+            # PIN is required — callers must pass it explicitly.
+            # A None PIN is not silently replaced with a default because any
+            # hardcoded default would be exposed in source and shown to users.
             if pin is None:
-                pin = "190482"  # Default AEPGP PIN
+                error_msg = "PIN not provided — caller must supply a PIN"
+                logger.error(error_msg)
+                return False, error_msg
 
             # Verify PIN APDU: 00 20 00 82 [length] [PIN]
             pin_bytes = [ord(c) for c in pin]
@@ -140,7 +144,9 @@ def decrypt_file_with_card(input_file, output_file, pin=None):
 
             # Decrypt the AES key using card's private key via DECIPHER APDU
             # PSO:DECIPHER format: 00 2A 80 86 [Lc] [0x00 + encrypted_data] [Le]
-            # The 0x00 byte indicates padding (required for RSA-OAEP)
+            # The 0x00 padding-indicator byte signals PKCS#1 v1.5 per OpenPGP
+            # card spec (0x00 = PKCS#1 v1.5, 0x02 = OAEP).  The AES key was
+            # encrypted with PKCS#1 v1.5 on the host side — these must match.
             logger.info("Decrypting AES key with card's private key...")
             print("Decrypting AES key with card...")
 
@@ -160,11 +166,18 @@ def decrypt_file_with_card(input_file, output_file, pin=None):
                 logger.error(error_msg)
                 return False, error_msg
 
-            # The response contains the decrypted AES key
+            # The response contains the decrypted AES key (should be exactly 32 bytes).
             if len(response) < 32:
-                error_msg = f"Decrypted key too short: {len(response)} bytes"
+                error_msg = f"Decrypted key too short: {len(response)} bytes (expected 32)"
                 logger.error(error_msg)
                 return False, error_msg
+
+            if len(response) > 32:
+                logger.warning(
+                    f"Card DECIPHER returned {len(response)} bytes (expected 32). "
+                    "Using first 32 bytes as the AES-256 key. "
+                    "This may indicate unexpected card output — check card firmware."
+                )
 
             aes_key = bytes(response[:32])  # 256-bit AES key
             logger.info(f"AES key decrypted: {len(aes_key)} bytes")
@@ -188,10 +201,21 @@ def decrypt_file_with_card(input_file, output_file, pin=None):
 
         logger.info(f"File decrypted: {len(plaintext)} bytes")
 
-        # Write decrypted file
-        logger.debug(f"Writing decrypted data to: {output_file}")
-        with open(output_file, 'wb') as f:
-            f.write(plaintext)
+        # Write decrypted file atomically: write to .tmp then os.replace() so
+        # a crash or card removal never leaves a partial/corrupt output file.
+        logger.debug(f"Writing decrypted data atomically to: {output_file}")
+        tmp_output = output_file + ".tmp"
+        try:
+            with open(tmp_output, 'wb') as f:
+                f.write(plaintext)
+            os.replace(tmp_output, output_file)  # atomic on Windows and POSIX
+        except Exception:
+            if os.path.exists(tmp_output):
+                try:
+                    os.remove(tmp_output)
+                except OSError:
+                    pass
+            raise
 
         logger.info(f"Decrypted file written successfully: {output_file}")
         print(f"Decryption successful!")

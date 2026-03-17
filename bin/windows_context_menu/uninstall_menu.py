@@ -8,8 +8,13 @@ IMPORTANT: This script requires Administrator privileges.
 
 import sys
 import os
+import glob
+import subprocess
 import winreg
 import ctypes
+
+# CLSID of the COM shell extension — must match AEPGPContextMenu.cs exactly
+SHELL_EXT_CLSID = "{3F7E8D9A-B1C2-4E5F-8A6B-9C0D1E2F3A4B}"
 
 
 def is_admin():
@@ -39,6 +44,25 @@ def elevate_privileges():
     except Exception as e:
         print(f"ERROR: Failed to elevate privileges: {e}")
         return False
+
+
+def _find_dotnet_tool(tool_name, prefer_x64=True):
+    """Locate a .NET Framework 4.x tool (RegAsm.exe).  Same logic as install_menu.py."""
+    roots = (
+        [r"C:\Windows\Microsoft.NET\Framework64",
+         r"C:\Windows\Microsoft.NET\Framework"]
+        if prefer_x64
+        else [r"C:\Windows\Microsoft.NET\Framework",
+              r"C:\Windows\Microsoft.NET\Framework64"]
+    )
+    for root in roots:
+        preferred = os.path.join(root, "v4.0.30319", tool_name)
+        if os.path.isfile(preferred):
+            return preferred
+        for p in sorted(glob.glob(os.path.join(root, "v4*", tool_name)), reverse=True):
+            if os.path.isfile(p):
+                return p
+    return None
 
 
 def delete_registry_key(root_key, key_path):
@@ -74,9 +98,100 @@ def delete_registry_key(root_key, key_path):
         return False
 
 
+def uninstall_com_shell_ext():
+    """Unregister and remove the COM shell extension.
+
+    Steps:
+      1. Read DllPath from HKLM\\SOFTWARE\\AEPGP\\ContextMenu (written by installer).
+      2. If the DLL file exists, run RegAsm /unregister to call [ComUnregisterFunction],
+         which removes the shellex handler keys written at registration time.
+      3. As a belt-and-suspenders fallback, also directly delete the shellex and
+         CLSID keys — covers the case where the DLL has already been deleted.
+      4. Remove HKLM\\SOFTWARE\\AEPGP\\ContextMenu (installer-written paths).
+
+    Returns True if anything was removed; False if the extension was not installed.
+    """
+    removed_anything = False
+
+    # ── Step 1: read DLL path from registry ──────────────────────────────
+    dll_path = None
+    try:
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE,
+                            r"SOFTWARE\AEPGP\ContextMenu") as k:
+            dll_path = winreg.QueryValueEx(k, "DllPath")[0]
+    except FileNotFoundError:
+        pass  # Key absent — extension was never installed or already removed
+    except Exception as e:
+        print(f"  ⚠ Could not read DllPath from registry: {e}")
+
+    # Fall back to path relative to this script
+    if not dll_path:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        dll_path = os.path.join(script_dir, "com_shell_ext", "AEPGPContextMenu.dll")
+
+    # ── Step 2: RegAsm /unregister (calls [ComUnregisterFunction]) ────────
+    if os.path.isfile(dll_path):
+        regasm = _find_dotnet_tool("RegAsm.exe")
+        if regasm:
+            result = subprocess.run(
+                [regasm, dll_path, "/unregister", "/nologo"],
+                capture_output=True, text=True
+            )
+            if result.returncode == 0:
+                print("  ✓ Unregistered COM shell extension via RegAsm")
+                removed_anything = True
+            else:
+                print(f"  ⚠ RegAsm /unregister returned {result.returncode} — "
+                      "falling back to direct registry cleanup")
+        else:
+            print("  ⚠ RegAsm.exe not found — falling back to direct registry cleanup")
+    else:
+        print(f"  - COM shell extension DLL not found ({dll_path}); "
+              "proceeding with direct registry cleanup")
+
+    # ── Step 3: direct registry cleanup (belt-and-suspenders) ────────────
+    # These keys are created by [ComRegisterFunction] / RegAsm /codebase
+    shellex_keys = [
+        rf"SOFTWARE\Classes\*\shellex\ContextMenuHandlers\AEPGP",
+        rf"SOFTWARE\Classes\Directory\Background\shellex\ContextMenuHandlers\AEPGP",
+        rf"SOFTWARE\Classes\CLSID\{SHELL_EXT_CLSID}",
+    ]
+    for key_path in shellex_keys:
+        try:
+            winreg.DeleteKey(winreg.HKEY_LOCAL_MACHINE, key_path)
+            print(f"  ✓ Removed HKLM\\{key_path}")
+            removed_anything = True
+        except FileNotFoundError:
+            pass  # Already absent
+        except Exception as e:
+            print(f"  ⚠ Could not remove HKLM\\{key_path}: {e}")
+
+    # ── Step 4: remove installer-written key ─────────────────────────────
+    try:
+        winreg.DeleteKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\AEPGP\ContextMenu")
+        print(r"  ✓ Removed HKLM\SOFTWARE\AEPGP\ContextMenu")
+        removed_anything = True
+    except FileNotFoundError:
+        pass
+    except Exception as e:
+        print(f"  ⚠ Could not remove HKLM\\SOFTWARE\\AEPGP\\ContextMenu: {e}")
+
+    # Clean up empty parent key if possible
+    try:
+        winreg.DeleteKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\AEPGP")
+    except Exception:
+        pass  # May still have subkeys; ignore
+
+    return removed_anything
+
+
 def uninstall_cascading_menus():
     """Remove all AEPGP cascading context menu entries"""
     success_count = 0
+
+    print("\nRemoving COM shell extension...")
+    if uninstall_com_shell_ext():
+        success_count += 1
 
     print("\nRemoving AEPGP context menu entries...")
 

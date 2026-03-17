@@ -42,6 +42,25 @@ if errorlevel 1 (
 )
 echo.
 
+REM Check for GPG (required by Change PIN — not a pip package)
+echo Checking for GPG (required for Change PIN feature)...
+where gpg >nul 2>&1
+if %ERRORLEVEL% neq 0 (
+    echo.
+    echo WARNING: gpg.exe was not found on the PATH.
+    echo.
+    echo The "Change PIN" feature requires GPG4Win to be installed.
+    echo Download it from: https://www.gpg4win.org/
+    echo Make sure gpg.exe is added to the system PATH during setup.
+    echo.
+    echo All other features ^(Encrypt, Decrypt, Generate Keys, Delete Keys^)
+    echo will work without GPG.
+    echo.
+) else (
+    echo   GPG found.
+)
+echo.
+
 REM Run the installer (will request elevation)
 echo [3/3] Installing context menu...
 echo.

@@ -27,7 +27,8 @@ def encrypt_file(filepath):
     This function uses direct APDU communication with the card:
     - Reads RSA public key directly from card via APDU (no GPG keyring)
     - Encrypts file using AES-256-GCM for performance
-    - Encrypts AES key using RSA-OAEP with card's public key
+    - Encrypts AES key using RSA PKCS#1 v1.5 with card's public key
+      (PKCS#1 v1.5 is required — the card PSO:DECIPHER cannot handle OAEP)
     - Creates .enc file that can be decrypted with the card's private key
 
     Args:

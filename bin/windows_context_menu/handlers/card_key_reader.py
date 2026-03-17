@@ -98,20 +98,31 @@ def read_public_key_from_card(card, key_slot='encryption'):
         # Log APDU response
         card._log_apdu(apdu, response, sw1, sw2)
 
-        # Check status words
-        # SW=61XX means more data available - need to GET RESPONSE
-        if sw1 == 0x61:
-            logger.info(f"Response truncated, {sw2} bytes remaining. Fetching with GET RESPONSE...")
-            # GET RESPONSE to fetch remaining data
+        # SW=61XX means more data available — chain GET RESPONSE until SW != 61XX.
+        # A single GET RESPONSE is not sufficient: the card may split the 270-byte
+        # RSA-2048 public key across more than two T=1 frames depending on hardware.
+        # Safety cap: 16 iterations is far more than any real card will need.
+        _MAX_GET_RESPONSE_ITERATIONS = 16
+        _iteration = 0
+        while sw1 == 0x61 and _iteration < _MAX_GET_RESPONSE_ITERATIONS:
+            _iteration += 1
+            logger.info(
+                f"GET RESPONSE iteration {_iteration}: "
+                f"{sw2 or 256} bytes remaining, total so far {len(response)} bytes"
+            )
             get_response_cmd = [0x00, 0xC0, 0x00, 0x00, sw2]
             logger.debug(f"Sending GET RESPONSE: {toHexString(get_response_cmd)}")
-            response2, sw1_2, sw2_2 = card.connection.transmit(get_response_cmd)
-            card._log_apdu(get_response_cmd, response2, sw1_2, sw2_2)
+            response_chunk, sw1, sw2 = card.connection.transmit(get_response_cmd)
+            card._log_apdu(get_response_cmd, response_chunk, sw1, sw2)
+            response = response + response_chunk
 
-            # Combine responses
-            response = response + response2
-            sw1, sw2 = sw1_2, sw2_2
-            logger.info(f"Combined response: {len(response)} bytes total")
+        if _iteration == _MAX_GET_RESPONSE_ITERATIONS and sw1 == 0x61:
+            logger.warning(
+                f"GET RESPONSE loop hit safety cap ({_MAX_GET_RESPONSE_ITERATIONS} "
+                "iterations) — response may be incomplete."
+            )
+
+        logger.info(f"Combined response: {len(response)} bytes total")
 
         # Check for errors
         if sw1 == 0x6A and sw2 == 0x88:

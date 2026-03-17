@@ -81,7 +81,7 @@ def decrypt_file(filepath):
 
         pin = simpledialog.askstring(
             "PIN Required",
-            "Enter your AEPGP card PIN:\n(Default is 190482)",
+            "Enter your AEPGP card PIN:",
             show='*',
             parent=root
         )
@@ -113,8 +113,7 @@ def decrypt_file(filepath):
             if "PIN" in error_msg or "retries" in error_msg:
                 error_display = (
                     f"PIN verification failed:\n\n{error_msg}\n\n"
-                    f"Please ensure you're using the correct PIN.\n"
-                    f"Default PIN is: 190482"
+                    f"Please ensure you are using the correct PIN."
                 )
             elif "Card not found" in error_msg:
                 error_display = (

@@ -10,11 +10,16 @@ registry (HKEY_CLASSES_ROOT).
 
 import sys
 import os
+import glob
+import subprocess
 import winreg
 import ctypes
 
 # Version tracking
 CURRENT_VERSION = "1.3.1"
+
+# CLSID of the COM shell extension — must match AEPGPContextMenu.cs exactly
+SHELL_EXT_CLSID = "{3F7E8D9A-B1C2-4E5F-8A6B-9C0D1E2F3A4B}"
 VERSION_REG_KEY = r"Software\AEPGP\ContextMenu"
 VERSION_VALUE_NAME = "Version"
 
@@ -49,6 +54,68 @@ def elevate_privileges():
         return False
 
 
+def is_windows_11():
+    """Return True if running on Windows 11 (build number 22000 or higher)."""
+    import platform
+    try:
+        build = int(platform.version().split('.')[2])
+        return build >= 22000
+    except Exception:
+        return False
+
+
+def _find_dotnet_tool(tool_name, prefer_x64=True):
+    """Locate a .NET Framework 4.x tool (csc.exe, RegAsm.exe).
+
+    Checks Framework64 before Framework so the compiled DLL is always x64,
+    matching /platform:x64 in the csc.exe invocation.
+    Returns the full path, or None if not found.
+    """
+    roots = (
+        [r"C:\Windows\Microsoft.NET\Framework64",
+         r"C:\Windows\Microsoft.NET\Framework"]
+        if prefer_x64
+        else [r"C:\Windows\Microsoft.NET\Framework",
+              r"C:\Windows\Microsoft.NET\Framework64"]
+    )
+    for root in roots:
+        # Prefer the known v4.0.30319 directory; fall back to any v4.x
+        preferred = os.path.join(root, "v4.0.30319", tool_name)
+        if os.path.isfile(preferred):
+            return preferred
+        for p in sorted(glob.glob(os.path.join(root, "v4*", tool_name)), reverse=True):
+            if os.path.isfile(p):
+                return p
+    return None
+
+
+def get_launcher_path():
+    """
+    Return the path to aepgp_launch.py and verify all handler scripts exist.
+
+    All registry entries point to the single launcher script.  This means only
+    ONE absolute path is stored in the registry per action — moving the
+    installation directory requires updating only that one file reference.
+    """
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    handlers_dir = os.path.join(script_dir, "handlers")
+
+    launcher = os.path.join(script_dir, "aepgp_launch.py")
+    if not os.path.exists(launcher):
+        raise FileNotFoundError(f"Launcher not found: {launcher}")
+
+    # Verify that every handler the launcher will dispatch to actually exists.
+    for name in ("encrypt_handler.py", "decrypt_handler.py",
+                 "generate_keys_handler.py", "delete_keys_handler.py",
+                 "change_pin_handler.py"):
+        path = os.path.join(handlers_dir, name)
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"Handler not found: {path}")
+
+    return launcher
+
+
+# Keep get_script_paths() for backward compatibility with any external callers.
 def get_script_paths():
     """Get the absolute paths to the handler scripts"""
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -78,74 +145,96 @@ def get_script_paths():
     return encrypt_handler, decrypt_handler, generate_keys_handler, delete_keys_handler, change_pin_handler  # Removed import_pfx_handler
 
 
-def install_cascading_menu_for_all_files(handlers):
+def install_cascading_menu_for_all_files(launcher):
     """
-    Install flat menu items for all files (*).
+    Install a single cascading AEPGP submenu for all files (*).
 
-    Creates individual menu items:
-    Right-click any file →
-        ├── AEPGP: Encrypt File
-        ├── AEPGP: Decrypt File
-        ├── AEPGP: Generate Keys
-        ├── AEPGP: Delete Keys
-        └── AEPGP: Change PIN
+    Creates a consistent structure mirroring the desktop menu:
+    Right-click any file → AEPGP →
+        ├── Encrypt File
+        ├── Decrypt File
+        ├── Generate Keys in Card
+        ├── Delete Keys from Card
+        └── Change Card PIN
+
+    All commands route through aepgp_launch.py (single registered path).
+
+    Raises TypeError if a legacy handlers-tuple is passed instead of a
+    launcher path string (guards against callers using the old signature).
     """
-    encrypt_handler, decrypt_handler, generate_keys_handler, delete_keys_handler, change_pin_handler = handlers
+    if isinstance(launcher, (list, tuple)):
+        raise TypeError(
+            "install_cascading_menu_for_all_files() no longer accepts a handlers "
+            "tuple. Pass the launcher script path string from get_launcher_path()."
+        )
 
     try:
         python_exe = sys.executable.replace("python.exe", "pythonw.exe")
         if not os.path.exists(python_exe):
             python_exe = sys.executable
 
-        # 1. AEPGP: Encrypt File
-        encrypt_key = winreg.CreateKey(winreg.HKEY_CLASSES_ROOT, r"*\shell\AEPGP_Encrypt")
-        winreg.SetValueEx(encrypt_key, "MUIVerb", 0, winreg.REG_SZ, "AEPGP: Encrypt File")
-        winreg.SetValueEx(encrypt_key, "Position", 0, winreg.REG_SZ, "Top")
-        encrypt_cmd_key = winreg.CreateKey(encrypt_key, "command")
-        winreg.SetValue(encrypt_cmd_key, "", winreg.REG_SZ, f'"{python_exe}" "{encrypt_handler}" "%1"')
-        winreg.CloseKey(encrypt_cmd_key)
-        winreg.CloseKey(encrypt_key)
-        print("  ✓ Added 'AEPGP: Encrypt File'")
+        # Single top-level AEPGP cascading entry for all files
+        main_key_path = r"*\shell\AEPGP"
+        main_key = winreg.CreateKey(winreg.HKEY_CLASSES_ROOT, main_key_path)
+        winreg.SetValueEx(main_key, "MUIVerb", 0, winreg.REG_SZ, "AEPGP")
+        winreg.SetValueEx(main_key, "Position", 0, winreg.REG_SZ, "Top")
+        # Empty SubCommands tells Windows to build the submenu from shell subkeys
+        winreg.SetValueEx(main_key, "SubCommands", 0, winreg.REG_SZ, "")
 
-        # 2. AEPGP: Decrypt File
-        decrypt_key = winreg.CreateKey(winreg.HKEY_CLASSES_ROOT, r"*\shell\AEPGP_Decrypt")
-        winreg.SetValueEx(decrypt_key, "MUIVerb", 0, winreg.REG_SZ, "AEPGP: Decrypt File")
-        winreg.SetValueEx(decrypt_key, "Position", 0, winreg.REG_SZ, "Top")
-        decrypt_cmd_key = winreg.CreateKey(decrypt_key, "command")
-        winreg.SetValue(decrypt_cmd_key, "", winreg.REG_SZ, f'"{python_exe}" "{decrypt_handler}" "%1"')
-        winreg.CloseKey(decrypt_cmd_key)
-        winreg.CloseKey(decrypt_key)
-        print("  ✓ Added 'AEPGP: Decrypt File'")
+        shell_key = winreg.CreateKey(main_key, "shell")
 
-        # 3. AEPGP: Generate Keys
-        genkeys_key = winreg.CreateKey(winreg.HKEY_CLASSES_ROOT, r"*\shell\AEPGP_GenerateKeys")
-        winreg.SetValueEx(genkeys_key, "MUIVerb", 0, winreg.REG_SZ, "AEPGP: Generate Keys")
-        winreg.SetValueEx(genkeys_key, "Position", 0, winreg.REG_SZ, "Top")
-        genkeys_cmd_key = winreg.CreateKey(genkeys_key, "command")
-        winreg.SetValue(genkeys_cmd_key, "", winreg.REG_SZ, f'"{python_exe}" "{generate_keys_handler}"')
-        winreg.CloseKey(genkeys_cmd_key)
-        winreg.CloseKey(genkeys_key)
-        print("  ✓ Added 'AEPGP: Generate Keys'")
+        # 1. Encrypt File
+        enc_key = winreg.CreateKey(shell_key, "encrypt")
+        winreg.SetValueEx(enc_key, "", 0, winreg.REG_SZ, "Encrypt File")
+        winreg.SetValueEx(enc_key, "MUIVerb", 0, winreg.REG_SZ, "Encrypt File")
+        enc_cmd = winreg.CreateKey(enc_key, "command")
+        winreg.SetValue(enc_cmd, "", winreg.REG_SZ, f'"{python_exe}" "{launcher}" encrypt "%1"')
+        winreg.CloseKey(enc_cmd)
+        winreg.CloseKey(enc_key)
+        print("  ✓ Added 'Encrypt File'")
 
-        # 4. AEPGP: Delete Keys
-        delkeys_key = winreg.CreateKey(winreg.HKEY_CLASSES_ROOT, r"*\shell\AEPGP_DeleteKeys")
-        winreg.SetValueEx(delkeys_key, "MUIVerb", 0, winreg.REG_SZ, "AEPGP: Delete Keys")
-        winreg.SetValueEx(delkeys_key, "Position", 0, winreg.REG_SZ, "Top")
-        delkeys_cmd_key = winreg.CreateKey(delkeys_key, "command")
-        winreg.SetValue(delkeys_cmd_key, "", winreg.REG_SZ, f'"{python_exe}" "{delete_keys_handler}"')
-        winreg.CloseKey(delkeys_cmd_key)
-        winreg.CloseKey(delkeys_key)
-        print("  ✓ Added 'AEPGP: Delete Keys'")
+        # 2. Decrypt File
+        dec_key = winreg.CreateKey(shell_key, "decrypt")
+        winreg.SetValueEx(dec_key, "", 0, winreg.REG_SZ, "Decrypt File")
+        winreg.SetValueEx(dec_key, "MUIVerb", 0, winreg.REG_SZ, "Decrypt File")
+        dec_cmd = winreg.CreateKey(dec_key, "command")
+        winreg.SetValue(dec_cmd, "", winreg.REG_SZ, f'"{python_exe}" "{launcher}" decrypt "%1"')
+        winreg.CloseKey(dec_cmd)
+        winreg.CloseKey(dec_key)
+        print("  ✓ Added 'Decrypt File'")
 
-        # 5. AEPGP: Change PIN
-        changepin_key = winreg.CreateKey(winreg.HKEY_CLASSES_ROOT, r"*\shell\AEPGP_ChangePIN")
-        winreg.SetValueEx(changepin_key, "MUIVerb", 0, winreg.REG_SZ, "AEPGP: Change PIN")
-        winreg.SetValueEx(changepin_key, "Position", 0, winreg.REG_SZ, "Top")
-        changepin_cmd_key = winreg.CreateKey(changepin_key, "command")
-        winreg.SetValue(changepin_cmd_key, "", winreg.REG_SZ, f'"{python_exe}" "{change_pin_handler}"')
-        winreg.CloseKey(changepin_cmd_key)
-        winreg.CloseKey(changepin_key)
-        print("  ✓ Added 'AEPGP: Change PIN'")
+        # 3. Generate Keys in Card
+        gen_key = winreg.CreateKey(shell_key, "generatekeys")
+        winreg.SetValueEx(gen_key, "", 0, winreg.REG_SZ, "Generate Keys in Card")
+        winreg.SetValueEx(gen_key, "MUIVerb", 0, winreg.REG_SZ, "Generate Keys in Card")
+        gen_cmd = winreg.CreateKey(gen_key, "command")
+        winreg.SetValue(gen_cmd, "", winreg.REG_SZ, f'"{python_exe}" "{launcher}" generate_keys')
+        winreg.CloseKey(gen_cmd)
+        winreg.CloseKey(gen_key)
+        print("  ✓ Added 'Generate Keys in Card'")
+
+        # 4. Delete Keys from Card
+        del_key = winreg.CreateKey(shell_key, "deletekeys")
+        winreg.SetValueEx(del_key, "", 0, winreg.REG_SZ, "Delete Keys from Card")
+        winreg.SetValueEx(del_key, "MUIVerb", 0, winreg.REG_SZ, "Delete Keys from Card")
+        del_cmd = winreg.CreateKey(del_key, "command")
+        winreg.SetValue(del_cmd, "", winreg.REG_SZ, f'"{python_exe}" "{launcher}" delete_keys')
+        winreg.CloseKey(del_cmd)
+        winreg.CloseKey(del_key)
+        print("  ✓ Added 'Delete Keys from Card'")
+
+        # 5. Change Card PIN
+        pin_key = winreg.CreateKey(shell_key, "changepin")
+        winreg.SetValueEx(pin_key, "", 0, winreg.REG_SZ, "Change Card PIN")
+        winreg.SetValueEx(pin_key, "MUIVerb", 0, winreg.REG_SZ, "Change Card PIN")
+        pin_cmd = winreg.CreateKey(pin_key, "command")
+        winreg.SetValue(pin_cmd, "", winreg.REG_SZ, f'"{python_exe}" "{launcher}" change_pin')
+        winreg.CloseKey(pin_cmd)
+        winreg.CloseKey(pin_key)
+        print("  ✓ Added 'Change Card PIN'")
+
+        winreg.CloseKey(shell_key)
+        winreg.CloseKey(main_key)
 
         # DISABLED - PFX Import feature incomplete
         # # 6. AEPGP: Import PFX (only for .pfx and .p12 files)
@@ -176,7 +265,7 @@ def install_cascading_menu_for_all_files(handlers):
         return False
 
 
-def install_cascading_menu_for_desktop(handlers):
+def install_cascading_menu_for_desktop(launcher):
     """
     Install cascading submenu for Desktop background.
 
@@ -185,8 +274,17 @@ def install_cascading_menu_for_desktop(handlers):
         ├── Generate Keys in Card
         ├── Delete Keys from Card
         └── Change Card PIN
+
+    All commands route through aepgp_launch.py (single registered path).
+
+    Raises TypeError if a legacy handlers-tuple is passed instead of a
+    launcher path string (guards against callers using the old signature).
     """
-    _, _, generate_keys_handler, delete_keys_handler, change_pin_handler = handlers
+    if isinstance(launcher, (list, tuple)):
+        raise TypeError(
+            "install_cascading_menu_for_desktop() no longer accepts a handlers "
+            "tuple. Pass the launcher script path string from get_launcher_path()."
+        )
 
     try:
         python_exe = sys.executable.replace("python.exe", "pythonw.exe")
@@ -210,7 +308,7 @@ def install_cascading_menu_for_desktop(handlers):
         winreg.SetValueEx(genkeys_key, "", 0, winreg.REG_SZ, "Generate Keys in Card")
         winreg.SetValueEx(genkeys_key, "MUIVerb", 0, winreg.REG_SZ, "Generate Keys in Card")
         genkeys_cmd_key = winreg.CreateKey(genkeys_key, "command")
-        winreg.SetValue(genkeys_cmd_key, "", winreg.REG_SZ, f'"{python_exe}" "{generate_keys_handler}"')
+        winreg.SetValue(genkeys_cmd_key, "", winreg.REG_SZ, f'"{python_exe}" "{launcher}" generate_keys')
         winreg.CloseKey(genkeys_cmd_key)
         winreg.CloseKey(genkeys_key)
         print("  ✓ Added 'Generate Keys in Card' to desktop menu")
@@ -220,7 +318,7 @@ def install_cascading_menu_for_desktop(handlers):
         winreg.SetValueEx(delkeys_key, "", 0, winreg.REG_SZ, "Delete Keys from Card")
         winreg.SetValueEx(delkeys_key, "MUIVerb", 0, winreg.REG_SZ, "Delete Keys from Card")
         delkeys_cmd_key = winreg.CreateKey(delkeys_key, "command")
-        winreg.SetValue(delkeys_cmd_key, "", winreg.REG_SZ, f'"{python_exe}" "{delete_keys_handler}"')
+        winreg.SetValue(delkeys_cmd_key, "", winreg.REG_SZ, f'"{python_exe}" "{launcher}" delete_keys')
         winreg.CloseKey(delkeys_cmd_key)
         winreg.CloseKey(delkeys_key)
         print("  ✓ Added 'Delete Keys from Card' to desktop menu")
@@ -230,7 +328,7 @@ def install_cascading_menu_for_desktop(handlers):
         winreg.SetValueEx(changepin_key, "", 0, winreg.REG_SZ, "Change Card PIN")
         winreg.SetValueEx(changepin_key, "MUIVerb", 0, winreg.REG_SZ, "Change Card PIN")
         changepin_cmd_key = winreg.CreateKey(changepin_key, "command")
-        winreg.SetValue(changepin_cmd_key, "", winreg.REG_SZ, f'"{python_exe}" "{change_pin_handler}"')
+        winreg.SetValue(changepin_cmd_key, "", winreg.REG_SZ, f'"{python_exe}" "{launcher}" change_pin')
         winreg.CloseKey(changepin_cmd_key)
         winreg.CloseKey(changepin_key)
         print("  ✓ Added 'Change Card PIN' to desktop menu")
@@ -243,6 +341,96 @@ def install_cascading_menu_for_desktop(handlers):
 
     except Exception as e:
         print(f"✗ Failed to install desktop cascading menu: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
+def install_com_shell_ext(launcher):
+    """Compile and register the C# COM shell extension for Windows 11 primary menu.
+
+    On success the AEPGP submenu appears in the *primary* Windows 11 right-click
+    menu (not hidden under 'Show more options').  On Windows 10 the COM handler
+    fires alongside the existing shell-verb entries — both work fine together.
+
+    Steps:
+      1. Locate com_shell_ext/AEPGPContextMenu.cs (relative to this script).
+      2. Find csc.exe (Framework64 / Framework).
+      3. Compile: csc /target:library /platform:x64 /out:...dll ...cs
+      4. Find RegAsm.exe.
+      5. Register: RegAsm.exe ...dll /codebase /nologo
+      6. Write LauncherPath, PythonPath, DllPath to HKLM\\SOFTWARE\\AEPGP\\ContextMenu.
+
+    Non-fatal: returns False (with a warning) if any step fails so the rest of
+    the installation can still complete.
+    """
+    try:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        cs_path  = os.path.join(script_dir, "com_shell_ext", "AEPGPContextMenu.cs")
+        dll_path = os.path.join(script_dir, "com_shell_ext", "AEPGPContextMenu.dll")
+
+        if not os.path.isfile(cs_path):
+            print(f"  ⚠ COM shell extension source not found: {cs_path}")
+            print("    Windows 11 primary menu will not be available.")
+            return False
+
+        # ── Step 1: find csc.exe ──────────────────────────────────────────
+        csc = _find_dotnet_tool("csc.exe")
+        if csc is None:
+            print("  ⚠ csc.exe not found — .NET Framework 4.x may not be installed.")
+            print("    Windows 11 primary menu will not be available.")
+            return False
+        print(f"  Found csc.exe: {csc}")
+
+        # ── Step 2: compile ───────────────────────────────────────────────
+        compile_result = subprocess.run(
+            [csc, "/target:library", "/platform:x64",
+             f"/out:{dll_path}", cs_path],
+            capture_output=True, text=True
+        )
+        if compile_result.returncode != 0:
+            print(f"  ✗ Compilation failed (exit {compile_result.returncode}):")
+            for line in (compile_result.stdout + compile_result.stderr).splitlines():
+                print(f"      {line}")
+            return False
+        print("  ✓ Compiled AEPGPContextMenu.dll")
+
+        # ── Step 3: find RegAsm.exe ───────────────────────────────────────
+        regasm = _find_dotnet_tool("RegAsm.exe")
+        if regasm is None:
+            print("  ⚠ RegAsm.exe not found.")
+            return False
+        print(f"  Found RegAsm.exe: {regasm}")
+
+        # ── Step 4: register ──────────────────────────────────────────────
+        reg_result = subprocess.run(
+            [regasm, dll_path, "/codebase", "/nologo"],
+            capture_output=True, text=True
+        )
+        if reg_result.returncode != 0:
+            print(f"  ✗ Registration failed (exit {reg_result.returncode}):")
+            for line in (reg_result.stdout + reg_result.stderr).splitlines():
+                print(f"      {line}")
+            return False
+        print("  ✓ Registered COM shell extension")
+
+        # ── Step 5: write registry paths for the DLL to read at runtime ──
+        python_exe = sys.executable.replace("python.exe", "pythonw.exe")
+        if not os.path.exists(python_exe):
+            python_exe = sys.executable
+
+        with winreg.CreateKey(winreg.HKEY_LOCAL_MACHINE,
+                              r"SOFTWARE\AEPGP\ContextMenu") as k:
+            winreg.SetValueEx(k, "LauncherPath", 0, winreg.REG_SZ, launcher)
+            winreg.SetValueEx(k, "PythonPath",   0, winreg.REG_SZ, python_exe)
+            winreg.SetValueEx(k, "DllPath",      0, winreg.REG_SZ, dll_path)
+
+        print("  ✓ Wrote registry paths (HKLM\\SOFTWARE\\AEPGP\\ContextMenu)")
+        print("✓ Installed COM shell extension for Windows 11 primary menu")
+        return True
+
+    except Exception as e:
+        print(f"  ✗ COM shell extension install failed: {e}")
         import traceback
         traceback.print_exc()
         return False
@@ -311,16 +499,10 @@ def main():
 
     print("\nRunning with Administrator privileges ✓")
 
-    # Get handler script paths
+    # Locate the launcher script and verify all handlers are present.
     try:
-        handlers = get_script_paths()
-        encrypt_handler, decrypt_handler, generate_keys_handler, delete_keys_handler, change_pin_handler = handlers
-        print(f"\nFound encrypt handler: {encrypt_handler}")
-        print(f"Found decrypt handler: {decrypt_handler}")
-        print(f"Found generate keys handler: {generate_keys_handler}")
-        print(f"Found delete keys handler: {delete_keys_handler}")
-        # print(f"Found import PFX handler: {import_pfx_handler}")  # DISABLED
-        print(f"Found change PIN handler: {change_pin_handler}")
+        launcher = get_launcher_path()
+        print(f"\nFound launcher: {launcher}")
     except FileNotFoundError as e:
         print(f"\nERROR: {e}")
         print("\nPress Enter to exit...")
@@ -332,8 +514,14 @@ def main():
     print("Installing AEPGP cascading context menu...")
     print("=" * 70)
 
-    all_files_ok = install_cascading_menu_for_all_files(handlers)
-    desktop_ok = install_cascading_menu_for_desktop(handlers)
+    all_files_ok = install_cascading_menu_for_all_files(launcher)
+    desktop_ok = install_cascading_menu_for_desktop(launcher)
+
+    # Install COM shell extension for Windows 11 primary context menu
+    print("\n" + "=" * 70)
+    print("Installing COM shell extension (Windows 11 primary menu)...")
+    print("=" * 70)
+    com_ok = install_com_shell_ext(launcher)
 
     # Create fresh debug log file
     create_debug_log()
@@ -348,15 +536,45 @@ def main():
         print("Installation completed successfully! ✓")
         print(f"\nInstalled version: {CURRENT_VERSION}")
         print("\nHow to use:")
-        print("  1. Right-click any file → AEPGP → Choose action")
-        print("  2. Right-click Desktop → AEPGP → Generate Keys or Change PIN")
-        print("\nAvailable actions in AEPGP submenu:")
-        print("  • Encrypt File")
-        print("  • Decrypt File")
-        print("  • Generate Keys in Card")
-        print("  • Change Card PIN")
-        print("\nNOTE: On Windows 11, AEPGP appears in 'Show more options'")
-        print("      (or you can use SHIFT+Right-click)")
+        print("  Right-click any file → AEPGP →")
+        print("    • Encrypt File")
+        print("    • Decrypt File")
+        print("    • Generate Keys in Card")
+        print("    • Delete Keys from Card")
+        print("    • Change Card PIN")
+        print("  Right-click Desktop → AEPGP →")
+        print("    • Generate Keys in Card")
+        print("    • Delete Keys from Card")
+        print("    • Change Card PIN")
+        if is_windows_11():
+            if com_ok:
+                print("\nWindows 11: AEPGP is available in the PRIMARY context menu ✓")
+                print("  (COM shell extension registered successfully)")
+            else:
+                print("\nWINDOWS 11 NOTICE:")
+                print("  COM shell extension could not be installed.")
+                print("  AEPGP entries appear only under 'Show more options'.")
+                print("  Workaround: hold SHIFT while right-clicking to open")
+                print("  the full legacy menu where AEPGP is immediately visible.")
+                ctypes.windll.user32.MessageBoxW(
+                    None,
+                    "AEPGP has been installed successfully.\n\n"
+                    "Windows 11 Notice\n"
+                    "─────────────────\n"
+                    "The COM shell extension could not be installed, so AEPGP\n"
+                    "entries appear only under 'Show more options'.\n\n"
+                    "Workaround: hold SHIFT while right-clicking any file or\n"
+                    "the desktop to open the full legacy menu where AEPGP\n"
+                    "entries are immediately visible.\n\n"
+                    "Check that .NET Framework 4.x is installed and re-run\n"
+                    "the installer as Administrator to retry.",
+                    "Windows 11 Compatibility Notice",
+                    0x40,  # MB_ICONINFORMATION
+                )
+        else:
+            if not com_ok:
+                print("\nNOTE: On Windows 11, AEPGP appears in 'Show more options'")
+                print("      (COM extension install failed — shell-verb fallback active)")
     else:
         print("Installation completed with errors.")
         print("Some context menu items may not have been installed.")
@@ -364,6 +582,8 @@ def main():
             print("  ✗ File context menu failed")
         if not desktop_ok:
             print("  ✗ Desktop context menu failed")
+        if not com_ok:
+            print("  ⚠ COM shell extension not installed (Windows 11 primary menu unavailable)")
 
     print("\nPress Enter to exit...")
     input()

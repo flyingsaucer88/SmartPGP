@@ -11,3 +11,14 @@ cryptography>=41.0.0
 
 # For building executable (development only - not needed for MSI installation)
 # pyinstaller>=5.0.0
+
+# ---------------------------------------------------------------------------
+# EXTERNAL RUNTIME DEPENDENCY (not pip-installable)
+# ---------------------------------------------------------------------------
+# GPG (gpg.exe) is required by change_pin_handler.py to change the card PIN.
+# It is NOT a Python package and cannot be installed via pip.
+#
+# Install GPG4Win from: https://www.gpg4win.org/
+# Ensure that gpg.exe is on the system PATH after installation.
+# INSTALL.bat will warn you if gpg.exe is not found.
+# ---------------------------------------------------------------------------

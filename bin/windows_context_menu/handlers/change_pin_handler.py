@@ -189,7 +189,27 @@ def change_pin():
             logger.info("Changing PIN using GPG passwd command...")
 
             import subprocess
+            import shutil
             import time
+
+            # Verify GPG is available before attempting — it is NOT a pip dependency.
+            # Users must install GPG4Win (https://www.gpg4win.org/) separately.
+            gpg_path = shutil.which("gpg")
+            if gpg_path is None:
+                error_msg = "GPG (gpg.exe) not found on PATH"
+                logger.error(error_msg)
+                card_utils.show_error_dialog(
+                    "GPG is required to change the card PIN but was not found.\n\n"
+                    "Please install GPG4Win from:\n"
+                    "  https://www.gpg4win.org/\n\n"
+                    "After installation, restart this application.\n\n"
+                    "Make sure 'gpg.exe' is added to the system PATH during setup.",
+                    "GPG Not Found"
+                )
+                logger.log_operation_end("Change PIN", False, error_msg)
+                return
+
+            logger.debug(f"GPG found at: {gpg_path}")
 
             try:
                 # Create automated input for gpg
@@ -207,6 +227,12 @@ def change_pin():
                 )
 
                 logger.debug(f"GPG command completed with return code: {result.returncode}")
+                if result.returncode != 0:
+                    logger.warning(f"GPG returned non-zero exit code: {result.returncode}")
+                    logger.debug(f"GPG stdout: {result.stdout}")
+                    logger.debug(f"GPG stderr: {result.stderr}")
+                    # APDU verification below is authoritative — do not abort here,
+                    # but the non-zero code is a strong signal that GPG failed.
 
                 # Kill GPG agent to release card
                 logger.info("Terminating GPG agent...")

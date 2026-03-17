@@ -36,7 +36,14 @@ def encrypt_file_with_card_key(input_file, output_file):
     """
     Encrypt a file using hybrid encryption (RSA + AES) with the card's public key.
 
-    Uses AES-256-GCM for file encryption and RSA-OAEP for key encryption.
+    Uses AES-256-GCM for file encryption and RSA PKCS#1 v1.5 for AES key
+    encryption.
+
+    IMPORTANT — padding scheme: RSA key encryption uses PKCS#1 v1.5, NOT OAEP.
+    The card's PSO:DECIPHER APDU expects PKCS#1 v1.5 ciphertext; the mandatory
+    0x00 padding-indicator byte sent with the DECIPHER command explicitly signals
+    PKCS#1 v1.5 per the OpenPGP card spec (0x00 = PKCS#1 v1.5, 0x02 = OAEP).
+    Changing the padding to OAEP will produce ciphertext the card cannot decrypt.
 
     Args:
         input_file: Path to file to encrypt
@@ -59,11 +66,9 @@ def encrypt_file_with_card_key(input_file, output_file):
             logger.error(error_msg)
             return False, error_msg
 
-        logger.debug(f"Reading input file...")
-        with open(input_file, 'rb') as f:
-            plaintext = f.read()
-        logger.info(f"Read {len(plaintext)} bytes from input file")
-        print(f"File size: {len(plaintext)} bytes")
+        file_size = os.path.getsize(input_file)
+        logger.info(f"Input file size: {file_size} bytes")
+        print(f"File size: {file_size} bytes")
 
         # Find and connect to card
         logger.info("Connecting to AEPGP card...")
@@ -113,10 +118,16 @@ def encrypt_file_with_card_key(input_file, output_file):
         # Generate random AES key and IV
         logger.debug("Generating AES key and IV...")
         aes_key = os.urandom(32)  # 256-bit AES key
-        iv = os.urandom(12)  # 96-bit IV for GCM
+        iv = os.urandom(12)       # 96-bit IV for GCM
 
-        # Encrypt the file data with AES-GCM
-        logger.info("Encrypting file data with AES-256-GCM...")
+        # Stream plaintext through AES-256-GCM into a temp ciphertext file.
+        # AES-GCM auth_tag is only available after finalize(), but the file
+        # format places auth_tag BEFORE the ciphertext.  We therefore write
+        # ciphertext to a temp file first, then assemble the final output in
+        # the correct order:
+        #   [4B key_len][encrypted_key][12B IV][16B auth_tag][ciphertext]
+        _CHUNK = 65536  # 64 KiB streaming chunk size
+        logger.info("Encrypting file data with AES-256-GCM (streaming)...")
         print("Encrypting file data...")
         cipher = Cipher(
             algorithms.AES(aes_key),
@@ -124,41 +135,64 @@ def encrypt_file_with_card_key(input_file, output_file):
             backend=default_backend()
         )
         encryptor = cipher.encryptor()
-        ciphertext = encryptor.update(plaintext) + encryptor.finalize()
-        auth_tag = encryptor.tag
+        tmp_cipher = output_file + ".ciphertmp"
+        bytes_processed = 0
 
-        logger.info(f"File encrypted: {len(ciphertext)} bytes ciphertext")
+        try:
+            with open(input_file, 'rb') as fin, open(tmp_cipher, 'wb') as ftmp:
+                while True:
+                    chunk = fin.read(_CHUNK)
+                    if not chunk:
+                        break
+                    ftmp.write(encryptor.update(chunk))
+                    bytes_processed += len(chunk)
+                # finalize() flushes any buffered output and makes tag available
+                last_block = encryptor.finalize()
+                if last_block:
+                    ftmp.write(last_block)
 
-        # Encrypt the AES key with RSA using PKCS#1 v1.5 padding
-        # (AEPGP cards use PKCS#1 v1.5 for PSO:DECIPHER, not OAEP)
-        logger.info("Encrypting AES key with RSA-PKCS1v15...")
-        print("Encrypting AES key with card's public key...")
-        encrypted_aes_key = rsa_public_key.encrypt(
-            aes_key,
-            padding.PKCS1v15()
-        )
+            auth_tag = encryptor.tag
+            logger.info(f"File encrypted: {bytes_processed} bytes plaintext")
 
-        logger.info(f"AES key encrypted: {len(encrypted_aes_key)} bytes")
+            # Encrypt the AES key with RSA PKCS#1 v1.5.
+            # IMPORTANT: Do NOT change to OAEP — the card PSO:DECIPHER expects
+            # PKCS#1 v1.5 (signalled by the 0x00 padding-indicator byte).
+            logger.info("Encrypting AES key with RSA-PKCS#1 v1.5...")
+            print("Encrypting AES key with card's public key...")
+            encrypted_aes_key = rsa_public_key.encrypt(aes_key, padding.PKCS1v15())
+            logger.info(f"AES key encrypted: {len(encrypted_aes_key)} bytes")
 
-        # Write encrypted file with format:
-        # [4 bytes: encrypted AES key length]
-        # [encrypted AES key]
-        # [12 bytes: IV]
-        # [16 bytes: GCM auth tag]
-        # [ciphertext]
+            # Assemble the final output file atomically (write to .tmp, then
+            # os.replace() so a crash never leaves a partial .enc file).
+            logger.debug(f"Assembling encrypted output atomically: {output_file}")
+            tmp_output = output_file + ".tmp"
+            try:
+                with open(tmp_output, 'wb') as fout, open(tmp_cipher, 'rb') as fsrc:
+                    fout.write(struct.pack('>I', len(encrypted_aes_key)))
+                    fout.write(encrypted_aes_key)
+                    fout.write(iv)
+                    fout.write(auth_tag)
+                    while True:
+                        chunk = fsrc.read(_CHUNK)
+                        if not chunk:
+                            break
+                        fout.write(chunk)
+                os.replace(tmp_output, output_file)  # atomic on both Windows and POSIX
+            except Exception:
+                if os.path.exists(tmp_output):
+                    try:
+                        os.remove(tmp_output)
+                    except OSError:
+                        pass
+                raise
 
-        logger.debug(f"Writing encrypted data to: {output_file}")
-        with open(output_file, 'wb') as f:
-            # Write encrypted AES key length
-            f.write(struct.pack('>I', len(encrypted_aes_key)))
-            # Write encrypted AES key
-            f.write(encrypted_aes_key)
-            # Write IV
-            f.write(iv)
-            # Write GCM auth tag
-            f.write(auth_tag)
-            # Write ciphertext
-            f.write(ciphertext)
+        finally:
+            # Always remove the intermediate ciphertext temp file
+            if os.path.exists(tmp_cipher):
+                try:
+                    os.remove(tmp_cipher)
+                except OSError:
+                    pass
 
         logger.info(f"Encrypted file written successfully: {output_file}")
         print(f"Encryption successful!")

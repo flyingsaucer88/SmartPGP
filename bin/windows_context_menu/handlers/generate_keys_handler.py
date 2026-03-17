@@ -27,12 +27,24 @@ def generate_keys():
     logger.log_system_info()
 
     try:
-        # Show confirmation dialog
+        import tkinter as tk
+        from tkinter import simpledialog
+
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes('-topmost', True)
+
+        # Show confirmation dialog.
+        # The 30-60 second timing warning is included here so the user is
+        # informed BEFORE they commit — no intermediate blocking modal needed.
         confirmed = card_utils.show_question_dialog(
             "This will generate a new RSA-2048 key pair on your AEPGP card.\n\n"
             "WARNING: This will overwrite any existing keys!\n\n"
             "Slot: Decryption/Encryption key\n"
             "Algorithm: RSA-2048\n\n"
+            "NOTE: Key generation takes 30-60 seconds. The application will\n"
+            "be unresponsive during this time — please wait and do not\n"
+            "remove the card.\n\n"
             "Do you want to continue?",
             "Generate Keys in Card"
         )
@@ -40,19 +52,35 @@ def generate_keys():
         if not confirmed:
             logger.info("User cancelled key generation")
             logger.log_operation_end("Generate Keys", False, "User cancelled")
+            root.destroy()
+            return
+
+        # Prompt for admin PIN — never hardcode it.
+        logger.info("Prompting for admin PIN...")
+        admin_pin = simpledialog.askstring(
+            "Admin PIN",
+            "Enter the Admin PIN for your AEPGP card:\n"
+            "(Default is 12345678 if you have not changed it)",
+            show='*',
+            parent=root
+        )
+        root.destroy()
+
+        if admin_pin is None or admin_pin == "":
+            logger.info("User cancelled admin PIN entry")
+            logger.log_operation_end("Generate Keys", False, "User cancelled admin PIN")
             return
 
         logger.info("Starting key generation on card...")
 
-        # Connect to card
-        from card_utils import AEPGPCard
-        card = AEPGPCard()
-
-        if not card.connect():
-            error_msg = "Failed to connect to AEPGP card"
+        # Connect to card using find_aepgp_card — consistent with all other handlers.
+        from card_utils import find_aepgp_card
+        card, error = find_aepgp_card()
+        if error:
+            error_msg = f"Card not found: {error}"
             logger.error(error_msg)
             card_utils.show_error_dialog(
-                "Could not connect to AEPGP card.\n\n"
+                f"AEPGP card not found:\n\n{error}\n\n"
                 "Please ensure:\n"
                 "1. The card is inserted\n"
                 "2. No other application is using the card",
@@ -61,43 +89,47 @@ def generate_keys():
             logger.log_operation_end("Generate Keys", False, error_msg)
             return
 
+        logger.info(f"Card found: {card.reader}")
+
         try:
             logger.info("Connected to card, starting key generation...")
 
             # Verify admin PIN (required for key generation)
             logger.info("Verifying admin PIN...")
-            admin_pin = "12345678"  # Default admin PIN
             pin_bytes = [ord(c) for c in admin_pin]
             verify_apdu = [0x00, 0x20, 0x00, 0x83, len(pin_bytes)] + pin_bytes
 
             response, sw1, sw2 = card.connection.transmit(verify_apdu)
             card._log_apdu(verify_apdu, response, sw1, sw2)
 
-            if sw1 != 0x90 or sw2 != 0x00:
+            if sw1 == 0x63:
+                retries = sw2 & 0x0F
+                error_msg = f"Admin PIN verification failed: {retries} retries remaining"
+                logger.error(error_msg)
+                card_utils.show_error_dialog(
+                    f"Incorrect Admin PIN.\n\n"
+                    f"{retries} attempts remaining before the card is locked.\n\n"
+                    "Please try again with the correct Admin PIN.",
+                    "PIN Verification Error"
+                )
+                logger.log_operation_end("Generate Keys", False, error_msg)
+                return
+            elif sw1 != 0x90 or sw2 != 0x00:
                 error_msg = f"Admin PIN verification failed: SW={sw1:02X}{sw2:02X}"
                 logger.error(error_msg)
                 card_utils.show_error_dialog(
                     f"Admin PIN verification failed.\n\n"
                     f"Status: {sw1:02X}{sw2:02X}\n\n"
-                    f"Make sure you're using the correct admin PIN.\n"
-                    f"Default admin PIN: 12345678",
+                    "Make sure you are using the correct Admin PIN.",
                     "PIN Verification Error"
                 )
                 logger.log_operation_end("Generate Keys", False, error_msg)
-                card.disconnect()
                 return
 
             logger.info("Admin PIN verified")
 
-            # Show progress dialog
-            card_utils.show_info_dialog(
-                "Generating RSA-2048 key pair on card...\n\n"
-                "This may take 30-60 seconds.\n"
-                "Please wait and do not remove the card...",
-                "Generating Keys"
-            )
-
-            # Generate key pair for decryption slot (0xB8)
+            # Generate key pair for decryption slot (0xB8).
+            # No intermediate blocking dialog — the user was already warned above.
             logger.info("Generating RSA-2048 key pair (this may take up to 60 seconds)...")
 
             # APDU: 00 47 80 00 02 B8 00 00
@@ -129,7 +161,6 @@ def generate_keys():
                     "Key Generation Error"
                 )
                 logger.log_operation_end("Generate Keys", False, error_msg)
-                card.disconnect()
                 return
 
             logger.info(f"Key generation successful! Generated {len(response)} bytes of public key data")
