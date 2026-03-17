@@ -4,7 +4,12 @@
       "Bash(python:*)",
       "Bash(dir \"c:\\\\Users\\\\Neel\\\\Pictures\\\\Documents\\\\git-repo\\\\SmartPGP\\\\bin\\\\windows_context_menu\\\\dist\")",
       "Bash(findstr:*)",
-      "Bash(find c:UsersNeelShahPicturesDocumentsgit-repoSmartPGPbinwindows_context_menu -type f \\\\\\(-name *.py -o -name *.bat -o -name *.md -o -name *.txt -o -name *.reg \\\\\\))"
+      "Bash(find c:UsersNeelShahPicturesDocumentsgit-repoSmartPGPbinwindows_context_menu -type f \\\\\\(-name *.py -o -name *.bat -o -name *.md -o -name *.txt -o -name *.reg \\\\\\))",
+      "Bash(git checkout:*)",
+      "Bash(git rm:*)",
+      "Bash(rm:*)",
+      "Bash(ls:*)",
+      "Bash(git show:*)"
     ]
   }
 }

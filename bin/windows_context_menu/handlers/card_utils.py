@@ -181,6 +181,157 @@ def get_card_info(card):
         }
 
 
+def _get_response_if_needed(card, response, sw1, sw2):
+    if sw1 != 0x61:
+        return response, sw1, sw2
+
+    get_response_cmd = [0x00, 0xC0, 0x00, 0x00, sw2]
+    response2, sw1_2, sw2_2 = card.connection.transmit(get_response_cmd)
+    card._log_apdu(get_response_cmd, response2, sw1_2, sw2_2)
+    return response + response2, sw1_2, sw2_2
+
+
+def get_key_alias(card):
+    """Fetch the stored alias for the card key pair (DO 0102)."""
+    try:
+        get_data_cmd = [0x00, 0xCA, 0x01, 0x02, 0x00]
+        response, sw1, sw2 = card.connection.transmit(get_data_cmd)
+        card._log_apdu(get_data_cmd, response, sw1, sw2)
+
+        response, sw1, sw2 = _get_response_if_needed(card, response, sw1, sw2)
+
+        if sw1 == 0x6A and sw2 == 0x88:
+            return None
+        if sw1 != 0x90 or sw2 != 0x00:
+            logger.error(f"Failed to read key alias: SW={sw1:02X}{sw2:02X}")
+            return None
+        if not response:
+            return None
+
+        try:
+            return bytes(response).decode("ascii")
+        except Exception:
+            return bytes(response).decode("utf-8", errors="replace")
+    except Exception as e:
+        logger.error(f"Failed to read key alias: {e}", e)
+        return None
+
+
+def set_key_alias(card, alias):
+    """Store an alias for the card key pair (DO 0102)."""
+    try:
+        alias_bytes = alias.encode("ascii")
+    except UnicodeEncodeError:
+        logger.error("Alias must be ASCII")
+        return False
+
+    if len(alias_bytes) > 255:
+        logger.error("Alias too long (max 255 bytes)")
+        return False
+
+    try:
+        put_data_cmd = [0x00, 0xDA, 0x01, 0x02, len(alias_bytes)] + list(alias_bytes)
+        response, sw1, sw2 = card.connection.transmit(put_data_cmd)
+        card._log_apdu(put_data_cmd, response, sw1, sw2)
+
+        if sw1 != 0x90 or sw2 != 0x00:
+            logger.error(f"Failed to store key alias: SW={sw1:02X}{sw2:02X}")
+            return False
+
+        return True
+    except Exception as e:
+        logger.error(f"Failed to store key alias: {e}", e)
+        return False
+
+
+def clear_key_alias(card):
+    """Clear the card key pair alias (DO 0102)."""
+    try:
+        put_data_cmd = [0x00, 0xDA, 0x01, 0x02, 0x00]
+        response, sw1, sw2 = card.connection.transmit(put_data_cmd)
+        card._log_apdu(put_data_cmd, response, sw1, sw2)
+
+        if sw1 != 0x90 or sw2 != 0x00:
+            logger.error(f"Failed to clear key alias: SW={sw1:02X}{sw2:02X}")
+            return False
+
+        return True
+    except Exception as e:
+        logger.error(f"Failed to clear key alias: {e}", e)
+        return False
+
+def set_hidden_attribute(path, hide):
+    """
+    Set or clear the Windows hidden attribute on a file.
+
+    Args:
+        path: Path to the file
+        hide: True to hide, False to unhide
+
+    Returns:
+        tuple: (success: bool, error_message: str or None)
+    """
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        FILE_ATTRIBUTE_HIDDEN = 0x02
+        FILE_ATTRIBUTE_NORMAL = 0x80
+        INVALID_FILE_ATTRIBUTES = 0xFFFFFFFF
+
+        get_attrs = ctypes.windll.kernel32.GetFileAttributesW
+        set_attrs = ctypes.windll.kernel32.SetFileAttributesW
+        get_attrs.argtypes = [wintypes.LPCWSTR]
+        get_attrs.restype = wintypes.DWORD
+        set_attrs.argtypes = [wintypes.LPCWSTR, wintypes.DWORD]
+        set_attrs.restype = wintypes.BOOL
+
+        attrs = get_attrs(path)
+        if attrs == INVALID_FILE_ATTRIBUTES:
+            return False, "Unable to read file attributes"
+
+        if hide:
+            new_attrs = attrs | FILE_ATTRIBUTE_HIDDEN
+        else:
+            new_attrs = attrs & ~FILE_ATTRIBUTE_HIDDEN
+            if new_attrs == 0:
+                new_attrs = FILE_ATTRIBUTE_NORMAL
+
+        if not set_attrs(path, new_attrs):
+            return False, "Unable to set file attributes"
+
+        return True, None
+    except Exception as e:
+        logger.error(f"Failed to set hidden attribute for {path}: {e}", e)
+        return False, str(e)
+
+
+def sync_encrypted_file_visibility(path):
+    """
+    Show encrypted files only when an AEPGP card is present.
+
+    Args:
+        path: Path to the encrypted file
+
+    Returns:
+        tuple: (card_present: bool, error_message: str or None)
+    """
+    if not os.path.exists(path):
+        return False, "File does not exist"
+
+    card, error = find_aepgp_card()
+    try:
+        if error:
+            set_hidden_attribute(path, True)
+            return False, error
+
+        set_hidden_attribute(path, False)
+        return True, None
+    finally:
+        if card:
+            card.disconnect()
+
+
 def show_error_dialog(message, title="AEPGP"):
     """
     Show an error message dialog on Windows.
@@ -236,6 +387,29 @@ def show_question_dialog(message, title="AEPGP"):
     except Exception as e:
         print(f"QUESTION: {message}")
         return False
+
+
+def show_input_dialog(message, title="AEPGP"):
+    """
+    Show an input dialog for text entry.
+
+    Returns:
+        str or None
+    """
+    try:
+        import tkinter as tk
+        from tkinter import simpledialog
+
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes('-topmost', True)
+
+        value = simpledialog.askstring(title, message, parent=root)
+        root.destroy()
+        return value
+    except Exception as e:
+        print(f"INPUT: {message}")
+        return None
 
 
 if __name__ == "__main__":

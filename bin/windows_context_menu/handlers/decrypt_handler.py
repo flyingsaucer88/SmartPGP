@@ -49,6 +49,17 @@ def decrypt_file(filepath):
 
     logger.info(f"File exists, size: {os.path.getsize(filepath)} bytes")
 
+    card_present, visibility_error = card_utils.sync_encrypted_file_visibility(filepath)
+    if not card_present:
+        logger.info(f"Card not present, encrypted file hidden: {visibility_error}")
+        card_utils.show_error_dialog(
+            f"AEPGP card not found:\n\n{visibility_error}\n\n"
+            "Please insert your AEPGP card and try again.",
+            "AEPGP Decryption Error"
+        )
+        logger.log_operation_end("Decryption", False, "Card not found")
+        return
+
     # Prepare output filename (remove .enc extension)
     if filepath.lower().endswith('.enc'):
         output_path = filepath[:-4]  # Remove .enc

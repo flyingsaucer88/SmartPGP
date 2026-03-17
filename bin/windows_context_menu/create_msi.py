@@ -138,6 +138,7 @@ UPGRADE_CODE = "{A1B2C3D4-E5F6-4A5B-8C9D-0E1F2A3B4C5D}"
 include_files = [
     ('install_menu.py', 'install_menu.py'),
     ('uninstall_menu.py', 'uninstall_menu.py'),
+    ('visibility_watcher.py', 'visibility_watcher.py'),
     ('REINSTALL.bat', 'REINSTALL.bat'),  # Reinstall script for upgrading from old versions
     ('INSTALL.bat', 'INSTALL.bat'),  # Quick install script
     ('UNINSTALL.bat', 'UNINSTALL.bat'),  # Quick uninstall script
