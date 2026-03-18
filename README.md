@@ -133,20 +133,49 @@ The repository contains several directories:
 
 The `bin/windows_context_menu` directory provides a complete Windows Explorer integration for AEPGP SmartPGP cards, enabling easy file encryption and decryption via right-click context menus.
 
+**Current version: 1.4.0**
+
 ## Features
 
 ### File Operations
-- **Encrypt File**: Encrypt any file using RSA-2048 encryption with the card's public key
+- **Encrypt File**: Encrypt any file using hybrid RSA-2048 + AES-256-GCM encryption
 - **Decrypt File**: Decrypt `.enc` files using the card's private key (PIN required)
-- Files are encrypted with AES-256-GCM for data and RSA-2048 for key wrapping
+- Files are encrypted with AES-256-GCM for data and RSA-2048 (PKCS#1 v1.5) for AES key wrapping
 
 ### Card Management
 - **Generate Keys**: Generate RSA-2048 key pairs directly on the card
-  - Prompts for a key alias that is stored on the card (Private DO 0x0102)
+  - Prompts for Admin PIN via a masked dialog (no hardcoded default assumed)
+  - Prompts for a key alias stored on the card (Private DO 0x0102)
   - Alias persists across sessions and can be read without PIN
   - Confirms before overwriting existing keys
 - **Delete Keys**: Remove key pairs from the card (requires admin PIN)
-- **Change PIN**: Change user PIN or admin PIN
+- **Change PIN**: Change the user PIN (requires GnuPG to be installed)
+
+### Cascading Context Menu Structure
+
+All AEPGP actions appear under a single **AEPGP** submenu:
+
+```
+Right-click any file → AEPGP →
+    ├── Encrypt File
+    ├── Decrypt File
+    ├── Generate Keys in Card
+    ├── Delete Keys from Card
+    └── Change Card PIN
+
+Right-click Desktop background → AEPGP →
+    ├── Generate Keys in Card
+    ├── Delete Keys from Card
+    └── Change Card PIN
+```
+
+### Windows 11 Primary Menu Support (v1.4.0)
+
+A C# COM shell extension (`com_shell_ext/AEPGPContextMenu.cs`) is compiled and registered during installation. When successful, the AEPGP submenu appears in the **primary** Windows 11 right-click menu — no need to click "Show more options". On Windows 10 the COM handler fires alongside the standard shell-verb entries; both work together.
+
+If the COM extension cannot be installed (e.g. .NET Framework 4.x is absent), AEPGP falls back to the legacy shell-verb approach:
+- Windows 11: items appear under **Show more options**, or use **SHIFT+Right-click**
+- Windows 10: items appear normally in the standard context menu
 
 ### Automatic File Visibility Management
 - **Background Watcher**: Automatically hides/shows `.enc` files based on card presence
@@ -165,28 +194,33 @@ The `bin/windows_context_menu` directory provides a complete Windows Explorer in
 
 1. Run the MSI installer (requires Administrator privileges):
    ```powershell
-   msiexec /i bin\windows_context_menu\dist\AEPGPContextMenu-1.3.1.msi
+   msiexec /i bin\windows_context_menu\dist\AEPGP_Context_Menu-1.3.1-win64.msi
    ```
 
    The installer will:
-   - Install all context menu handlers
+   - Install all context menu handlers under a single AEPGP cascading submenu
+   - Compile and register the COM shell extension for Windows 11 primary menu support (requires .NET Framework 4.x)
    - Register the background visibility watcher to start at user logon
-   - Set up automatic updates for future versions
+   - Create a fresh debug log at `%TEMP%\aepgp_debug.log`
 
 ### Manual Installation
 
 1. Install Python 3.8+ and required dependencies:
    ```powershell
-   pip install pyscard pyasn1 cryptography
+   pip install pyscard cryptography
    ```
 
-2. Run the installation script with Administrator privileges:
+2. Install GnuPG (required for PIN change functionality):
+   Download from [gpg4win.org](https://www.gpg4win.org/)
+
+3. Run the installation script with Administrator privileges:
    ```powershell
    python bin\windows_context_menu\install_menu.py
    ```
 
-3. The installer will:
-   - Register all context menu handlers in Windows Registry
+4. The installer will:
+   - Register all context menu handlers in Windows Registry under a cascading AEPGP submenu
+   - Attempt to compile and register the COM shell extension for Windows 11 (requires .NET Framework 4.x and `csc.exe`)
    - Install the visibility watcher to run at user logon
    - Verify all required files are present
 
@@ -195,25 +229,25 @@ The `bin/windows_context_menu` directory provides a complete Windows Explorer in
 ### Encrypting Files
 
 1. Right-click any file in Windows Explorer
-2. Select **AEPGP: Encrypt File**
+2. Select **AEPGP** → **Encrypt File**
+   - Windows 11: available in the primary menu if COM extension installed; otherwise click "Show more options" or SHIFT+Right-click
 3. Insert your AEPGP card when prompted
-4. Choose a recipient (or use card owner for self-encryption)
-5. The encrypted file will be created with `.enc` extension
+4. The encrypted file will be created with `.enc` extension
 
 ### Decrypting Files
 
 1. Right-click any `.enc` file in Windows Explorer
-2. Select **AEPGP: Decrypt File**
+2. Select **AEPGP** → **Decrypt File**
 3. Insert your AEPGP card and enter your PIN when prompted
 4. The decrypted file will be saved in the same directory
 
 ### Generating Keys
 
-1. Right-click anywhere in Windows Explorer
-2. Select **AEPGP: Generate Keys**
-3. Insert your AEPGP card
+1. Right-click anywhere in Windows Explorer (or on the Desktop)
+2. Select **AEPGP** → **Generate Keys in Card**
+3. Confirm the operation in the dialog (includes 30-60 second timing warning)
 4. Enter a key alias when prompted (stored on the card)
-5. Confirm with admin PIN (default: `12345678`)
+5. Enter your Admin PIN when prompted via the masked input dialog
 6. Wait 30-60 seconds for key generation to complete
 
 The key alias is stored in Private DO 0x0102 on the card and can be read without PIN authentication. This allows the system to identify the key pair owner even when the card is not authenticated.
@@ -221,8 +255,8 @@ The key alias is stored in Private DO 0x0102 on the card and can be read without
 ### Card-Stored Alias
 
 The key pair alias is stored directly on the AEPGP card using Private Data Object (DO) 0x0102:
-- **Reading**: No PIN required - the alias can be read anytime the card is present
-- **Writing**: Requires admin PIN - only set during key generation
+- **Reading**: No PIN required — the alias can be read anytime the card is present
+- **Writing**: Requires admin PIN — only set during key generation
 - **Persistence**: Survives card removal and reinsertion
 - **Format**: ASCII string, maximum 255 bytes
 - **Purpose**: Identifies the card owner for encryption operations
@@ -232,27 +266,80 @@ This is supported by the SmartPGP applet's private DO implementation (see `Smart
 ## Technical Details
 
 ### Encryption Format
-- **Algorithm**: RSA-2048 with AES-256-GCM
-- **Key Wrapping**: RSA-OAEP with SHA-256
-- **File Format**: OpenPGP-compatible encrypted messages
-- **Card Operations**: All private key operations performed on-card
+
+- **Algorithm**: RSA-2048 + AES-256-GCM hybrid encryption
+- **Key Wrapping**: RSA PKCS#1 v1.5 (NOT OAEP — the card's `PSO:DECIPHER` APDU
+  requires PKCS#1 v1.5, signalled by the mandatory `0x00` padding-indicator byte)
+- **File Format**:
+
+  ```
+  [4 bytes: encrypted AES key length (big-endian)]
+  [N bytes: RSA PKCS#1 v1.5-encrypted AES-256 key]
+  [12 bytes: IV for AES-GCM]
+  [16 bytes: GCM authentication tag]
+  [remaining: AES-256-GCM encrypted file data]
+  ```
+
+- **Streaming**: Encryption and decryption process data in 64 KiB chunks; output
+  is written atomically via a `.tmp` file + `os.replace()` to prevent partial files
 
 ### Card Detection
-- Supports multiple ATR patterns for AEPGP/SmartPGP cards
-- Compatible with Gemalto/NXP JCOP cards running SmartPGP applet
+
+- Supports two ATR patterns:
+  - AmbiSecure token: `3B D5 18 FF 81 B1 FE 45 1F C3 80 73 C8 21 10 6F`
+  - Gemalto/NXP JCOP running SmartPGP: `3B D5 18 FF 81 91 FE 1F C3 80 73 C8 21 10 0A`
 - Automatic reader selection and card connection management
+- Searches all available readers until a supported card is found
 
 ### File Visibility Management
 - Uses Windows hidden file attribute (not encryption-based hiding)
-- Background process (`visibility_watcher.py`) monitors card presence every 5 seconds
-- Rescans configured directories every 60 seconds for new `.enc` files
+- Background process (`visibility_watcher.py`) monitors card presence every 5 seconds (default)
+- Rescans configured directories every 60 seconds for new `.enc` files (default)
 - Skips system directories (`.git`, `node_modules`, `__pycache__`, `AppData`)
+- Runs as `pythonw.exe` (no console window)
 - Minimal CPU and memory footprint
 
+### Windows 11 COM Shell Extension (v1.4.0)
+
+- Source: `com_shell_ext/AEPGPContextMenu.cs` (C#, .NET Framework 4.x)
+- CLSID: `{3F7E8D9A-B1C2-4E5F-8A6B-9C0D1E2F3A4B}`
+- Built with `csc.exe /target:library /platform:x64` during installation
+- Registered with `RegAsm.exe /codebase`
+- Reads `LauncherPath` and `PythonPath` from `HKLM\SOFTWARE\AEPGP\ContextMenu` at runtime
+- Non-fatal: if compilation or registration fails, installer continues with shell-verb fallback
+
+### Registry Architecture (v1.4.0)
+
+All registry entries now point to a single `aepgp_launch.py` dispatcher rather than five
+separate handler scripts. This means only **one** absolute path is stored in the registry per
+action — moving the installation directory requires updating only that single file reference.
+
 ### Debug Logging
-All operations are logged to `%APPDATA%\AEPGP\logs\aepgp_YYYYMMDD.log` for troubleshooting.
+
+All operations are logged to `%TEMP%\aepgp_debug.log` for troubleshooting.
+
+The most recent operation's log is always at the top of the file (newest-first ordering). The
+file is rotated automatically when it exceeds 5 MB.
+
+**What is logged:** timestamps, operation type, file path/size, Python version, smart card
+readers, card ATR, APDU commands and responses, GPG command execution, errors and stack traces.
+
+**What is never logged:** PIN codes, file contents, encryption keys.
 
 ## Uninstallation
+
+### Via MSI (Recommended)
+
+```powershell
+msiexec /x bin\windows_context_menu\dist\AEPGP_Context_Menu-1.3.1-win64.msi
+```
+
+Or through **Windows Settings → Apps → AEPGP Context Menu → Uninstall**.
+
+The uninstaller also un-registers the COM shell extension and removes the
+`HKLM\SOFTWARE\AEPGP\ContextMenu` registry key.
+
+### Manual Uninstall
 
 Run the uninstaller script with Administrator privileges:
 ```powershell
@@ -261,15 +348,18 @@ python bin\windows_context_menu\uninstall_menu.py
 
 This will:
 - Remove all context menu entries from Windows Registry
+- Un-register the COM shell extension (if installed)
 - Remove the visibility watcher from user startup
 - Preserve encrypted files and debug logs
 
 ## Requirements
 
 - Windows 10 or later
-- Python 3.8 or later
+- Python 3.8 or later (not required for end users when using the MSI installer)
 - Smart card reader (USB CCID compliant)
 - AEPGP SmartPGP card with RSA-2048 key pair
+- GnuPG (from [gpg4win.org](https://www.gpg4win.org/)) — required for PIN change functionality
+- .NET Framework 4.x — required for Windows 11 primary menu COM extension (optional but recommended)
 - Administrator privileges (for installation only)
 
 ## Documentation
@@ -324,7 +414,7 @@ resource consumption by tweaking the following variables:
   internal RAM buffer used for input/output chaining. Chaining is
   especially used in case of long commands and responses such as those
   involved in private key import and certificate import/export;
-  
+
 - `Constants.EXTENDED_CAPABILITIES`, bytes 5 and 6: the maximal size
   in bytes of a certificate associated to a key. Following the OpenPGP
   card specification, a certificate can be stored for each of the
@@ -445,4 +535,3 @@ token.
 - Click on "SmartPGP trusted authorities", and then on "+" at the top left;
 
 - Set a name for this authority and select the file you uploaded.
-
